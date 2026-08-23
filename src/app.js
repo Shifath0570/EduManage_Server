@@ -17,37 +17,34 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Routes
-app.use('/api/users', require('./routes/userRoutes'));
-app.use('/api/notices', require('./routes/noticeRoutes'));
+const noticeRoutes = require('./routes/noticeRoutes');
 
+// Use notice routes
+app.use('/api/notices', noticeRoutes);
 
-
-
-
-// Health check route
-app.get('/health', (req, res) => {
-  res.status(200).json({
+// Optional: Welcome route
+app.get('/', (req, res) => {
+  res.json({
     success: true,
-    message: 'Server is running',
-    timestamp: new Date().toISOString()
+    message: 'Welcome to the API'
   });
 });
 
-// Error handling middleware
+// Optional: 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'Route not found'
+  });
+});
+
+// Optional: Error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({
     success: false,
     message: 'Something went wrong!',
     error: process.env.NODE_ENV === 'development' ? err.message : {}
-  });
-});
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: 'Route not found'
   });
 });
 
