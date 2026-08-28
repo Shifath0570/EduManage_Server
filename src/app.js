@@ -22,6 +22,8 @@ const noticeRoutes = require('./routes/noticeRoutes');
 // Use notice routes
 app.use('/api/notices', noticeRoutes);
 
+
+
 // Optional: Welcome route
 app.get('/', (req, res) => {
   res.json({
@@ -29,6 +31,8 @@ app.get('/', (req, res) => {
     message: 'Welcome to the API'
   });
 });
+
+
 
 // Optional: 404 handler
 app.use((req, res) => {
