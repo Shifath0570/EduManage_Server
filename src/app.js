@@ -56,12 +56,8 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-<<<<<<< HEAD
-app.listen(PORT, '0.0.0.0', () => {
-=======
-app.listen(PORT, () => {
->>>>>>> 0d66ada5cb1b41ed3accfe9796461c8a3bdd703d
-  console.log(`Server running on port ${PORT}`);
-});
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 
-module.exports = app;
+  module.exports = app;
