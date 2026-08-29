@@ -13,6 +13,5 @@ router.delete('/:id', verifyToken, deleteNotice);
 router.post('/', verifyToken, createNotice); 
 
 
-
-
 module.exports = router;
+
