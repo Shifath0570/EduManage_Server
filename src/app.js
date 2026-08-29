@@ -19,16 +19,20 @@ app.use(express.urlencoded({ extended: true }));
 // Routes
 const noticeRoutes = require('./routes/noticeRoutes');
 const teacherRoutes = require('./routes/teacherRoutes');
+const attendanceRoutes = require('./routes/attendanceRoutes');
+const studentRoutes = require('./routes/studentRoutes');
 
-// Use notice routes
+// Use routes
 app.use('/api/notices', noticeRoutes);
-app.use('/api/teachers', teacherRoutes)
+app.use('/api/teachers', teacherRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/students', studentRoutes);
 
 // Optional: Welcome route
 app.get('/', (req, res) => {
   res.json({
     success: true,
-    message: 'Welcome to the API'
+    message: 'Welcome to the EduManage API'
   });
 });
 
@@ -52,7 +56,11 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
+<<<<<<< HEAD
 app.listen(PORT, '0.0.0.0', () => {
+=======
+app.listen(PORT, () => {
+>>>>>>> 0d66ada5cb1b41ed3accfe9796461c8a3bdd703d
   console.log(`Server running on port ${PORT}`);
 });
 

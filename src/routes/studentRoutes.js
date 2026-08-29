@@ -2,7 +2,13 @@ const express = require('express');
 const router = express.Router();
 const verifyToken = require('../middleware/auth');
 
-const { getStudents, getStudentById, createStudent, updateStudent, deleteStudent} = require('../controllers/studentController');
+const {
+  getStudents,
+  getStudentById,
+  createStudent,
+  updateStudent,
+  deleteStudent
+} = require('../controllers/studentController');
 
 // Public routes
 router.get('/', getStudents);
