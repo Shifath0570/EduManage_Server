@@ -29,6 +29,10 @@ const studentSchema = new mongoose.Schema({
         trim: true,
         default: ''
     },
+    profileImage: {
+        type: String,
+        default: 'default-teacher.jpg'
+    },
     className: {
         type: String,
         required: true,
