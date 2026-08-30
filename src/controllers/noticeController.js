@@ -86,3 +86,45 @@ exports.deleteNotice = async (req, res) => {
   }
 };
 
+// Update notice by id
+// ✅ UPDATE notice by id (PUT)
+exports.updateNotice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    // Check if notice exists
+    const existingNotice = await Notice.findById(id);
+    if (!existingNotice) {
+      return res.status(404).json({
+        success: false,
+        message: 'Notice not found'
+      });
+    }
+
+    // Update the notice with new data
+    const updatedNotice = await Notice.findByIdAndUpdate(
+      id,
+      {
+        ...updateData,
+        updatedAt: new Date() // Update the updatedAt timestamp
+      },
+      {
+        new: true, // Return the updated document
+        runValidators: true // Run model validations
+      }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Notice updated successfully",
+      data: updatedNotice
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to update notice",
+      error: error.message
+    });
+  }
+};
