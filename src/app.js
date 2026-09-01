@@ -23,12 +23,16 @@ const noticeRoutes = require('./routes/noticeRoutes');
 const teacherRoutes = require('./routes/teacherRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const studentRoutes = require('./routes/studentRoutes');
+const examRoutes = require('./routes/examRoutes');
+const markRoutes = require('./routes/markRoutes');
 
 // Use routes
 app.use('/api/notices', noticeRoutes);
 app.use('/api/teachers', teacherRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/students', studentRoutes);
+app.use('/api/exams', examRoutes);
+app.use('/api/marks', markRoutes);
 
 // Optional: Welcome route
 app.get('/', (req, res) => {
