@@ -112,14 +112,32 @@
 
 const Student = require('../models/Student');
 
-// Get all students
+// Get all students (with optional filtering by className, section, status)
 exports.getStudents = async (req, res) => {
   try {
-    // Sort by createdAt in descending order (newest first)
-    const students = await Student.find().sort({ createdAt: -1 });
+    const { className, class: classParam, section, status } = req.query;
+
+    const filter = {};
+    const targetClass = className || classParam;
+    if (targetClass && targetClass !== 'All') {
+      const cleanClass = targetClass.replace('class_', '').replace('Class', '').replace('class-', '').trim();
+      filter.className = { $regex: new RegExp(`^${cleanClass}$|^Class ${cleanClass}$|^class_${cleanClass}$`, 'i') };
+    }
+
+    if (section && section !== 'All') {
+      const cleanSection = section.toUpperCase().replace('SECTION', '').trim();
+      filter.section = cleanSection;
+    }
+
+    if (status && status !== 'All') {
+      filter.status = status;
+    }
+
+    const students = await Student.find(filter).sort({ roll: 1, createdAt: -1 });
 
     res.status(200).json({
       success: true,
+      count: students.length,
       data: students
     });
   } catch (error) {
