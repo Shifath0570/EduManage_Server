@@ -24,6 +24,14 @@ const studentSchema = new mongoose.Schema({
         lowercase: true,
         default: ''
     },
+    dateOfBirth: {
+        type: String,
+        required: true
+    },
+    admissionDate: {
+        type: String,
+        required: true
+    },
     phone: {
         type: String,
         trim: true,
@@ -46,6 +54,11 @@ const studentSchema = new mongoose.Schema({
         uppercase: true,
         index: true
     },
+    address: {
+        type: String,
+        required: true,
+        trim: true
+    },
     status: {
         type: String,
         enum: ['Active', 'Inactive'],
@@ -65,7 +78,11 @@ const studentSchema = new mongoose.Schema({
         type: String,
         trim: true,
         default: ''
-    }
+    },
+    subjects: {
+        type: [String],
+        default: []
+    },
 }, {
     collection: 'Students',
     timestamps: true
