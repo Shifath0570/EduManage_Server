@@ -3,7 +3,7 @@ const Exam = require('../models/Exam');
 // Create a new exam
 exports.createExam = async (req, res) => {
   try {
-    const { examName, examType, className, class: classParam, subject, totalMarks, passMarks, examDate, status, description } = req.body;
+    const { examName, examType, className, class: classParam, section, subject, totalMarks, passMarks, examDate, status, description } = req.body;
 
     if (!examName || (!className && !classParam) || !examDate) {
       return res.status(400).json({
@@ -15,11 +15,13 @@ exports.createExam = async (req, res) => {
     const rawClass = className || classParam;
     const cleanClass = rawClass.replace('class_', '').replace('Class', '').replace('class-', '').trim();
     const formattedClass = `Class ${cleanClass}`;
+    const cleanSection = section ? section.toUpperCase().replace('SECTION', '').trim() : 'A';
 
     const exam = await Exam.create({
       examName: examName.trim(),
       examType: examType || 'Mid Term',
       className: formattedClass,
+      section: cleanSection,
       subject: subject || 'All Subjects',
       totalMarks: totalMarks ? Number(totalMarks) : 100,
       passMarks: passMarks ? Number(passMarks) : 40,
@@ -45,7 +47,7 @@ exports.createExam = async (req, res) => {
 // Get all exams with optional filtering
 exports.getExams = async (req, res) => {
   try {
-    const { className, class: classParam, status } = req.query;
+    const { className, class: classParam, section, status } = req.query;
 
     const filter = {};
     const targetClass = className || classParam;
@@ -53,6 +55,11 @@ exports.getExams = async (req, res) => {
     if (targetClass && targetClass !== 'All') {
       const cleanClass = targetClass.replace('class_', '').replace('Class', '').replace('class-', '').trim();
       filter.className = { $regex: new RegExp(`^${cleanClass}$|^Class ${cleanClass}$|^class_${cleanClass}$`, 'i') };
+    }
+
+    if (section && section !== 'All') {
+      const cleanSection = section.toUpperCase().replace('SECTION', '').trim();
+      filter.section = cleanSection;
     }
 
     if (status && status !== 'All') {

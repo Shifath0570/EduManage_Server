@@ -17,6 +17,14 @@ const examSchema = new mongoose.Schema({
     trim: true,
     index: true
   },
+  section: {
+    type: String,
+    required: [true, 'Section is required'],
+    trim: true,
+    uppercase: true,
+    default: 'A',
+    index: true
+  },
   subject: {
     type: String,
     trim: true,

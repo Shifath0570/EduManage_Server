@@ -1,4 +1,13 @@
+const mongoose = require('mongoose');
 const Mark = require('../models/Mark');
+const Exam = require('../models/Exam');
+const Student = require('../models/Student');
+
+// Helper to normalize Class strings (e.g. "Class 5", "class-5", "5" -> "5")
+const normalizeClass = (cls) => String(cls || '').replace(/class[_\-\s]*/i, '').trim().toLowerCase();
+
+// Helper to normalize Section strings (e.g. "Section A", "section-a", "a" -> "A")
+const normalizeSection = (sec) => String(sec || '').toUpperCase().replace(/section/i, '').trim();
 
 // Helper to calculate Grade and GPA based on marks percentage
 const calculateGradeAndGpa = (marksObtained, totalMarks = 100) => {
@@ -16,12 +25,12 @@ const calculateGradeAndGpa = (marksObtained, totalMarks = 100) => {
 };
 
 /**
- * Save or update marks for students (bulk upsert)
+ * Save or update marks for students (bulk upsert with eligibility validation)
  * POST /api/marks
  */
 exports.saveMarks = async (req, res) => {
   try {
-    const { className, class: classParam, section, exam, subject, records } = req.body;
+    const { className, class: classParam, section, exam, examId, subject, records } = req.body;
 
     const targetClass = className || classParam;
 
@@ -39,24 +48,82 @@ exports.saveMarks = async (req, res) => {
       });
     }
 
-    const cleanClass = targetClass.replace('class_', '').replace('Class', '').replace('class-', '').trim();
-    const formattedClass = `Class ${cleanClass}`;
-    const cleanSection = section.toUpperCase().replace('SECTION', '').trim();
-    const cleanExam = exam.trim();
-    const cleanSubject = subject.trim();
-
-    // Drop legacy conflicting unique indexes (e.g. exam_1_className_1_subject_1) if present
-    try {
-      const indexes = await Mark.collection.indexes();
-      for (const idx of indexes) {
-        if (idx.name !== '_id_' && idx.unique && (!idx.key || !idx.key.studentId)) {
-          console.log(`Dropping legacy unique index on Marks: ${idx.name}`);
-          await Mark.collection.dropIndex(idx.name);
-        }
-      }
-    } catch (idxErr) {
-      // Collection or index may not exist yet
+    // 1. Find the selected Exam
+    let examDoc = null;
+    if (examId && mongoose.isValidObjectId(examId)) {
+      examDoc = await Exam.findById(examId);
     }
+    if (!examDoc) {
+      examDoc = await Exam.findOne({ examName: new RegExp(`^${exam.trim()}$`, 'i') });
+    }
+
+    if (!examDoc) {
+      return res.status(404).json({
+        success: false,
+        message: `Exam "${exam}" not found.`
+      });
+    }
+
+    const examTargetClass = examDoc.className;
+    const examTargetSection = examDoc.section || 'A';
+
+    // 2. Validate requested Class and Section against Exam Target Class and Section
+    if (
+      normalizeClass(targetClass) !== normalizeClass(examTargetClass) ||
+      normalizeSection(section) !== normalizeSection(examTargetSection)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'This student is not eligible for this exam.'
+      });
+    }
+
+    // 3. Validate requested Subject against Exam Scope (if exam is subject-specific)
+    if (examDoc.subject && examDoc.subject !== 'All Subjects') {
+      if (subject.trim().toLowerCase() !== examDoc.subject.trim().toLowerCase()) {
+        return res.status(400).json({
+          success: false,
+          message: `Subject "${subject}" does not match exam scope "${examDoc.subject}".`
+        });
+      }
+    }
+
+    // 4. Validate EVERY student in records against Exam Target Class and Section
+    for (const item of records) {
+      const studentId = item.studentId || item._id;
+      if (!studentId) continue;
+
+      const studentQuery = [
+        { studentId: String(studentId).trim() }
+      ];
+      if (mongoose.isValidObjectId(studentId)) {
+        studentQuery.push({ _id: studentId });
+      }
+
+      const student = await Student.findOne({ $or: studentQuery });
+
+      if (!student) {
+        return res.status(400).json({
+          success: false,
+          message: `Student with ID "${studentId}" not found.`
+        });
+      }
+
+      if (
+        normalizeClass(student.className) !== normalizeClass(examTargetClass) ||
+        normalizeSection(student.section) !== normalizeSection(examTargetSection)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: 'This student is not eligible for this exam.'
+        });
+      }
+    }
+
+    const formattedClass = examTargetClass;
+    const cleanSection = examTargetSection;
+    const cleanExam = examDoc.examName;
+    const cleanSubject = subject.trim();
 
     const savedMarks = [];
 
@@ -114,28 +181,45 @@ exports.saveMarks = async (req, res) => {
 };
 
 /**
- * Get marks with filters
+ * Get marks with filters (constrained by Exam Target Class/Section if Exam specified)
  * GET /api/marks
  */
 exports.getMarks = async (req, res) => {
   try {
-    const { className, class: classParam, section, exam, subject, studentId } = req.query;
+    const { className, class: classParam, section, exam, examId, subject, studentId } = req.query;
 
     const filter = {};
 
-    const targetClass = className || classParam;
+    let targetClass = className || classParam;
+    let targetSection = section;
+
+    // If an exam is specified, read its target Class and Section as source of truth
+    if (exam || examId) {
+      let examDoc = null;
+      if (examId && mongoose.isValidObjectId(examId)) {
+        examDoc = await Exam.findById(examId);
+      }
+      if (!examDoc && exam && exam !== 'All') {
+        examDoc = await Exam.findOne({ examName: new RegExp(`^${exam.trim()}$`, 'i') });
+      }
+
+      if (examDoc) {
+        targetClass = examDoc.className;
+        targetSection = examDoc.section || 'A';
+        filter.exam = { $regex: new RegExp(`^${examDoc.examName.trim()}$`, 'i') };
+      } else if (exam && exam !== 'All') {
+        filter.exam = { $regex: new RegExp(`^${exam.trim()}$`, 'i') };
+      }
+    }
+
     if (targetClass && targetClass !== 'All') {
       const cleanClass = targetClass.replace('class_', '').replace('Class', '').replace('class-', '').trim();
       filter.className = { $regex: new RegExp(`^${cleanClass}$|^Class ${cleanClass}$|^class_${cleanClass}$`, 'i') };
     }
 
-    if (section && section !== 'All') {
-      const cleanSection = section.toUpperCase().replace('SECTION', '').trim();
+    if (targetSection && targetSection !== 'All') {
+      const cleanSection = targetSection.toUpperCase().replace('SECTION', '').trim();
       filter.section = cleanSection;
-    }
-
-    if (exam && exam !== 'All') {
-      filter.exam = { $regex: new RegExp(`^${exam.trim()}$`, 'i') };
     }
 
     if (subject && subject !== 'All') {
