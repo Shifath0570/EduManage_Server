@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 
-const { getTeachers, getTeacherById, createTeacher, updateTeacher, deleteTeacher} = require('../controllers/teacherController');
+const { getAllTeachers, getTeacherById, createTeacher, updateTeacher, deleteTeacher } = require('../controllers/teacherController');
 
 // Public routes
-router.get('/', getTeachers);
+router.get('/', getAllTeachers);
 router.get('/:id', getTeacherById);
 
 // Protected routes (require authentication)

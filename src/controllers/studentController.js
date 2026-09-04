@@ -1,4 +1,3 @@
-
 const Student = require('../models/Student');
 
 // Get all students (with optional filtering by className, section, status)
@@ -9,8 +8,8 @@ exports.getStudents = async (req, res) => {
     const filter = {};
     const targetClass = className || classParam;
     if (targetClass && targetClass !== 'All') {
-      const cleanClass = targetClass.replace('class_', '').replace('Class', '').replace('class-', '').trim();
-      filter.className = { $regex: new RegExp(`^${cleanClass}$|^Class ${cleanClass}$|^class_${cleanClass}$`, 'i') };
+      const cleanClass = targetClass.replace(/^class[_\s-]/i, '').replace(/^Class\s*/i, '').trim();
+      filter.className = { $regex: new RegExp(`^(class[\\s_-]+)?${cleanClass}($|[^0-9].*)`, 'i') };
     }
 
     if (section && section !== 'All') {
@@ -136,9 +135,3 @@ exports.deleteStudent = async (req, res) => {
     });
   }
 };
-
-
-
-
-
-
