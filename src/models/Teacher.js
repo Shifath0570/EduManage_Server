@@ -1,22 +1,20 @@
+
 const mongoose = require('mongoose');
 
-// Teacher Schema
 const teacherSchema = new mongoose.Schema({
     teacherId: {
-        type: Number,
-        required: true,
-        unique: true,
-        index: true
-    },
-    name: {
         type: String,
-        required: true,
+        trim: true
+    },
+    fullName: {
+        type: String,
+        required: [true, 'Full name is required'],
         trim: true,
         maxlength: 100
     },
     email: {
         type: String,
-        required: true,
+        required: [true, 'Email is required'],
         unique: true,
         trim: true,
         lowercase: true,
@@ -24,68 +22,87 @@ const teacherSchema = new mongoose.Schema({
     },
     phone: {
         type: String,
-        required: true,
-        trim: true,
-        match: [/^01\d{9}$|^01\d{2}-\d{6,8}$/, 'Please provide a valid phone number']
+        required: [true, 'Phone number is required'],
+        trim: true
     },
-    subjects: {
-        type: [String],
-        required: true,
-        validate: {
-            validator: function (v) {
-                return v && v.length > 0;
-            },
-            message: 'A teacher must have at least one subject'
-        }
-    },
-    className: {
+    dateOfBirth: {
         type: String,
-        required: true,
-        trim: true,
-        enum: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
-        default: '1'
+        required: true
     },
-    section: {
+    gender: {
         type: String,
-        required: true,
-        trim: true,
-        uppercase: true,
-        enum: ['A', 'B', 'C', 'D', 'E'],
-        default: 'A'
+        enum: ['Male', 'Female', 'Other', 'male', 'female', 'other'],
+        required: true
     },
-    studentCount: {
+    bloodGroup: {
+        type: String
+    },
+    profilePhoto: {
+        type: String,
+        default: 'default-teacher.jpg'
+    },
+    qualifications: {
+        type: String,
+        required: true
+    },
+    experienceYears: {
         type: Number,
-        required: true,
-        min: 0,
-        max: 60,
         default: 0
     },
-    status: {
+    subjectSpecialization: {
         type: String,
-        required: true,
-        enum: ['Active', 'Inactive', 'Suspended'],
-        default: 'Active'
+        required: true
     },
-    // Optional fields for additional functionality
     joiningDate: {
-        type: Date,
-        default: Date.now
+        type: String,
+        required: true
+    },
+    employeeId: {
+        type: String
     },
     address: {
         type: String,
+        required: true,
         trim: true
     },
-    profilePicture: {
+    city: {
         type: String,
-        default: 'default-teacher.jpg'
+        required: true
+    },
+    stateProvince: {
+        type: String,
+        required: true
+    },
+    postCode: {
+        type: String,
+        required: true
+    },
+    guardianName: {
+        type: String,
+        required: true
+    },
+    guardianPhone: {
+        type: String,
+        required: true
+    },
+    emergencyContact: {
+        type: String
+    },
+    submittedAt: {
+        type: Date,
+        default: Date.now
+    },
+    status: {
+        type: String,
+        enum: ['Active', 'Inactive', 'Suspended'],
+        default: 'Active'
     }
 }, {
     collection: "Teachers",
-    timestamps: true // Adds createdAt and updatedAt fields automatically
-
+    timestamps: true
 });
 
-// Create the model
 const Teacher = mongoose.model('Teacher', teacherSchema);
 
 module.exports = Teacher;
+

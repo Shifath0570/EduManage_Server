@@ -24,10 +24,22 @@ const studentSchema = new mongoose.Schema({
         lowercase: true,
         default: ''
     },
+    dateOfBirth: {
+        type: String,
+        required: true
+    },
+    admissionDate: {
+        type: String,
+        required: true
+    },
     phone: {
         type: String,
         trim: true,
         default: ''
+    },
+    profileImage: {
+        type: String,
+        default: 'default-teacher.jpg'
     },
     className: {
         type: String,
@@ -41,6 +53,11 @@ const studentSchema = new mongoose.Schema({
         trim: true,
         uppercase: true,
         index: true
+    },
+    address: {
+        type: String,
+        required: true,
+        trim: true
     },
     status: {
         type: String,
@@ -61,7 +78,11 @@ const studentSchema = new mongoose.Schema({
         type: String,
         trim: true,
         default: ''
-    }
+    },
+    subjects: {
+        type: [String],
+        default: []
+    },
 }, {
     collection: 'Students',
     timestamps: true

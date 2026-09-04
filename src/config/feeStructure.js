@@ -1,0 +1,16 @@
+module.exports = {
+  class_1: 500,
+  class_2: 500,
+  class_3: 500,
+  class_4: 500,
+  class_5: 500,
+  class_6: 600,
+  class_7: 700,
+  class_8: 800,
+  class_9_businessStudies: 900,
+  class_9_humanities: 900,
+  class_9_science: 900,
+  class_10_businessStudies: 1000,
+  class_10_humanities: 1000,
+  class_10_science: 1000,
+};
