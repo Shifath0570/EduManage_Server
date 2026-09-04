@@ -6,21 +6,22 @@ const connectDB = require('./config/database');
 // Load env vars
 dotenv.config();
 
+// Connect to database
+connectDB();
+
 const app = express();
 
 // Middleware
 app.use(cors());
-// app.use(express.json());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
-// app.use(express.urlencoded({ extended: true }));
 
-// Ensure database connection middleware
+// Ensure DB connection in serverless if needed
 app.use(async (req, res, next) => {
   try {
     await connectDB();
   } catch (err) {
-    console.error('DB connect error in middleware:', err);
+    console.error('DB connect middleware error:', err);
   }
   next();
 });
