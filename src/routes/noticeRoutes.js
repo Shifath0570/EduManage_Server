@@ -1,6 +1,5 @@
 const express = require('express');
 const router = express.Router();
-const verifyToken = require('../middleware/auth');
 
 const { getNotices, getNoticeById, createNotice, deleteNotice, updateNotice } = require('../controllers/noticeController');
 
@@ -17,3 +16,4 @@ router.put('/:id', updateNotice);
 
 
 module.exports = router;
+

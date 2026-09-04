@@ -13,14 +13,28 @@ const app = express();
 
 // Middleware
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// app.use(express.urlencoded({ extended: true }));
 
 // Routes
 const noticeRoutes = require('./routes/noticeRoutes');
+const teacherRoutes = require('./routes/teacherRoutes');
+const attendanceRoutes = require('./routes/attendanceRoutes');
+const studentRoutes = require('./routes/studentRoutes');
+const examRoutes = require('./routes/examRoutes');
+const markRoutes = require('./routes/markRoutes');
+const feeRoutes = require('./routes/feeRoutes');
 
-// Use notice routes
+// Use routes
 app.use('/api/notices', noticeRoutes);
+app.use('/api/teachers', teacherRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/students', studentRoutes);
+app.use('/api/exams', examRoutes);
+app.use('/api/marks', markRoutes);
+app.use('/api/fees', feeRoutes);
 
 
 
@@ -28,11 +42,9 @@ app.use('/api/notices', noticeRoutes);
 app.get('/', (req, res) => {
   res.json({
     success: true,
-    message: 'Welcome to the API'
+    message: 'Welcome to the EduManage API'
   });
 });
-
-
 
 // Optional: 404 handler
 app.use((req, res) => {
@@ -54,8 +66,8 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 
-module.exports = app;
+  module.exports = app;
