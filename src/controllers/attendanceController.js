@@ -4,6 +4,7 @@ const Student = require('../models/Student');
 
 /**
  * Record or update attendance session (upsert)
+ * Supports dynamic Classes 1 through 10 and sections A-D
  * POST /api/attendance
  */
 exports.saveAttendance = async (req, res) => {
