@@ -24,27 +24,8 @@ exports.saveAttendance = async (req, res) => {
             });
         }
 
-        // Validate teacher assignment if user is a teacher (and not admin)
-        if (req.user && req.user.role === 'teacher') {
-            const teacherProfile = await Teacher.findOne({ email: req.user.email.toLowerCase() });
-            if (teacherProfile) {
-                const assignedClass = teacherProfile.className;
-                const assignedSection = teacherProfile.section;
-                const assignedSubjects = teacherProfile.subjects || [];
-
-                // Compare normalized strings
-                const isClassMatch = String(assignedClass).toLowerCase().replace('class', '').trim() === String(className).toLowerCase().replace('class', '').trim();
-                const isSectionMatch = String(assignedSection).toUpperCase().trim() === String(section).toUpperCase().trim();
-                const isSubjectMatch = assignedSubjects.some(s => s.toLowerCase().trim() === subject.toLowerCase().trim());
-
-                if (!isClassMatch || !isSectionMatch || !isSubjectMatch) {
-                    return res.status(403).json({
-                        success: false,
-                        message: 'You are only authorized to record attendance for your assigned class, section, and subjects.'
-                    });
-                }
-            }
-        }
+        // Optional: Log teacher info if provided
+        const normalizedClass = className.replace(/^class[_\s-]/i, '').replace(/^Class\s*/i, '').trim();
 
         const totalStudents = records.length;
         const presentCount = records.filter(r => r.status === 'PRESENT').length;
@@ -53,7 +34,7 @@ exports.saveAttendance = async (req, res) => {
         const excusedCount = records.filter(r => r.status === 'EXCUSED').length;
 
         const updateData = {
-            className: className.trim(),
+            className: normalizedClass,
             section: section.toUpperCase().trim(),
             subject: subject.trim(),
             date: date.trim(),
@@ -117,7 +98,8 @@ exports.getAttendance = async (req, res) => {
 
         const targetClass = className || classParam;
         if (targetClass && targetClass !== 'All') {
-            filter.className = { $regex: new RegExp(`^${targetClass.replace('Class', '').trim()}$|^Class ${targetClass.replace('Class', '').trim()}$`, 'i') };
+            const cleanClass = targetClass.replace(/^class[_\s-]/i, '').replace(/^Class\s*/i, '').trim();
+            filter.className = { $regex: new RegExp(`^(class[\\s_-]+)?${cleanClass}($|[^0-9].*)`, 'i') };
         }
 
         if (section && section !== 'All') {
