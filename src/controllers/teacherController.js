@@ -2,7 +2,7 @@
 const Teacher = require('../models/Teacher');
 
 // Get all teachers
-exports.getTeachers = async (req, res) => {
+exports.getAllTeachers = async (req, res) => {
   try {
     // Sort by createdAt in descending order (newest first)
     const teachers = await Teacher.find().sort({ createdAt: -1 });
