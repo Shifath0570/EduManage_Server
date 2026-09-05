@@ -46,10 +46,14 @@ exports.createTeacher = async (req, res) => {
   try {
     const teacherInfo = req.body;
 
-    const result = await Teacher.create({
-      ...teacherInfo,
-      createdAt: new Date()
+    // Remove empty string fields so Mongoose default values apply
+    Object.keys(teacherInfo).forEach((key) => {
+      if (teacherInfo[key] === '' || teacherInfo[key] === null) {
+        delete teacherInfo[key];
+      }
     });
+
+    const result = await Teacher.create(teacherInfo);
 
     res.status(201).json({
       success: true,
@@ -57,6 +61,24 @@ exports.createTeacher = async (req, res) => {
       data: result
     });
   } catch (error) {
+    // Handle Duplicate Key Error (e.g., Duplicate Email)
+    if (error.code === 11000) {
+      const duplicateField = Object.keys(error.keyPattern || {})[0] || 'field';
+      return res.status(400).json({
+        success: false,
+        message: `A record with this ${duplicateField} already exists.`
+      });
+    }
+
+    // Handle Mongoose Field Validation Errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({
+        success: false,
+        message: messages.join(', ')
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Failed to create teacher',
@@ -64,6 +86,10 @@ exports.createTeacher = async (req, res) => {
     });
   }
 };
+
+
+
+
 
 // Update teacher by ID
 exports.updateTeacher = async (req, res) => {
