@@ -1,15 +1,53 @@
 const Student = require('../models/Student');
+const {
+  normalizeClassNumber,
+  normalizeGroup,
+  getClassSubjectMapKey
+} = require('../config/classSubjects');
 
-// Get all students (with optional filtering by className, section, status)
+// Get all students (with optional filtering by className, section, status, stream/group)
 exports.getStudents = async (req, res) => {
   try {
-    const { className, class: classParam, section, status } = req.query;
+    const { className, class: classParam, section, status, stream, group } = req.query;
 
     const filter = {};
     const targetClass = className || classParam;
+    const targetGroup = stream || group;
+
     if (targetClass && targetClass !== 'All') {
-      const cleanClass = targetClass.replace(/^class[_\s-]/i, '').replace(/^Class\s*/i, '').trim();
-      filter.className = { $regex: new RegExp(`^(class[\\s_-]+)?${cleanClass}($|[^0-9].*)`, 'i') };
+      const classNum = normalizeClassNumber(targetClass);
+      const normGroup = normalizeGroup(targetGroup);
+
+      if (classNum) {
+        if (classNum >= 9 && normGroup) {
+          // Strict Class 9 or 10 with group
+          const mapKey = getClassSubjectMapKey(classNum, normGroup); // e.g. "class_9_businessStudies"
+          const groupRegex = normGroup === 'businessStudies' ? 'business' : normGroup;
+          filter.$and = filter.$and || [];
+          filter.$and.push({
+            $or: [
+              { className: new RegExp(`^${mapKey}$|^class[\\s_-]*${classNum}[\\s_-]*${groupRegex}`, 'i') },
+              {
+                className: new RegExp(`^(class[\\s_-]+)?${classNum}($|[^0-9].*)`, 'i'),
+                stream: new RegExp(`^${normGroup}$|^${groupRegex}$|^${targetGroup}$`, 'i')
+              },
+              {
+                className: new RegExp(`^(class[\\s_-]+)?${classNum}($|[^0-9].*)`, 'i'),
+                group: new RegExp(`^${normGroup}$|^${groupRegex}$|^${targetGroup}$`, 'i')
+              }
+            ]
+          });
+        } else if (classNum <= 8) {
+          // Class 1 to 8: strictly match class 1..8 and NOT class 10
+          filter.className = { $regex: new RegExp(`^(class[\\s_-]+)?${classNum}$`, 'i') };
+        } else {
+          // Class 9 or 10 without group specified
+          filter.className = { $regex: new RegExp(`^(class[\\s_-]+)?${classNum}($|[^0-9].*)`, 'i') };
+        }
+      } else {
+        const cleanClass = targetClass.replace(/^class[_\s-]/i, '').replace(/^Class\s*/i, '').trim();
+        filter.className = { $regex: new RegExp(`^(class[\\s_-]+)?${cleanClass}($|[^0-9].*)`, 'i') };
+      }
     }
 
     if (section && section !== 'All') {

@@ -25,6 +25,11 @@ const examSchema = new mongoose.Schema({
     default: 'A',
     index: true
   },
+  stream: {
+    type: String,
+    trim: true,
+    default: null
+  },
   subject: {
     type: String,
     trim: true,

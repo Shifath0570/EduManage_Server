@@ -2,6 +2,12 @@ const mongoose = require('mongoose');
 const Mark = require('../models/Mark');
 const Exam = require('../models/Exam');
 const Student = require('../models/Student');
+const {
+  isStudentEligibleForExam,
+  normalizeClassNumber,
+  normalizeGroup,
+  isValidSubject
+} = require('../config/classSubjects');
 
 // Helper to normalize Class strings (e.g. "Class 5", "class-5", "5" -> "5")
 const normalizeClass = (cls) => String(cls || '').replace(/class[_\-\s]*/i, '').trim().toLowerCase();
@@ -64,13 +70,13 @@ exports.saveMarks = async (req, res) => {
       });
     }
 
-    const examTargetClass = examDoc.className;
-    const examTargetSection = examDoc.section || 'A';
+    const examClassNum = normalizeClassNumber(examDoc.className);
+    const targetClassNum = normalizeClassNumber(targetClass);
 
     // 2. Validate requested Class and Section against Exam Target Class and Section
     if (
-      normalizeClass(targetClass) !== normalizeClass(examTargetClass) ||
-      normalizeSection(section) !== normalizeSection(examTargetSection)
+      targetClassNum !== examClassNum ||
+      normalizeSection(section) !== normalizeSection(examDoc.section)
     ) {
       return res.status(400).json({
         success: false,
@@ -88,7 +94,16 @@ exports.saveMarks = async (req, res) => {
       }
     }
 
-    // 4. Validate EVERY student in records against Exam Target Class and Section
+    // Validate that the subject is a valid subject for the Class + Group
+    const validSub = isValidSubject(examDoc.className, examDoc.stream, subject);
+    if (!validSub && examDoc.subject !== 'All Subjects') {
+      return res.status(400).json({
+        success: false,
+        message: `Subject "${subject}" is not valid for ${examDoc.className}${examDoc.stream ? ` (${examDoc.stream})` : ''}.`
+      });
+    }
+
+    // 4. Validate EVERY student in records against Exam Target Class, Group, and Section
     for (const item of records) {
       const studentId = item.studentId || item._id;
       if (!studentId) continue;
@@ -109,19 +124,18 @@ exports.saveMarks = async (req, res) => {
         });
       }
 
-      if (
-        normalizeClass(student.className) !== normalizeClass(examTargetClass) ||
-        normalizeSection(student.section) !== normalizeSection(examTargetSection)
-      ) {
+      // Strict Exam Target Eligibility verification (Class + Group/Stream + Section)
+      const isEligible = isStudentEligibleForExam(student, examDoc);
+      if (!isEligible) {
         return res.status(400).json({
           success: false,
-          message: 'This student is not eligible for this exam.'
+          message: `Student "${student.name}" (Roll: ${student.roll}) is not eligible for this exam (${examDoc.className}${examDoc.stream ? ` - ${examDoc.stream}` : ''} Section ${examDoc.section}).`
         });
       }
     }
 
-    const formattedClass = examTargetClass;
-    const cleanSection = examTargetSection;
+    const formattedClass = examDoc.className;
+    const cleanSection = examDoc.section || 'A';
     const cleanExam = examDoc.examName;
     const cleanSubject = subject.trim();
 
@@ -181,12 +195,12 @@ exports.saveMarks = async (req, res) => {
 };
 
 /**
- * Get marks with filters (constrained by Exam Target Class/Section if Exam specified)
+ * Get marks with filters (constrained by Exam Target Class/Stream/Section if Exam specified)
  * GET /api/marks
  */
 exports.getMarks = async (req, res) => {
   try {
-    const { className, class: classParam, section, exam, examId, subject, studentId } = req.query;
+    const { className, class: classParam, section, exam, examId, subject, studentId, stream, group } = req.query;
 
     const filter = {};
 
@@ -194,8 +208,8 @@ exports.getMarks = async (req, res) => {
     let targetSection = section;
 
     // If an exam is specified, read its target Class and Section as source of truth
+    let examDoc = null;
     if (exam || examId) {
-      let examDoc = null;
       if (examId && mongoose.isValidObjectId(examId)) {
         examDoc = await Exam.findById(examId);
       }
@@ -213,8 +227,10 @@ exports.getMarks = async (req, res) => {
     }
 
     if (targetClass && targetClass !== 'All') {
-      const cleanClass = targetClass.replace('class_', '').replace('Class', '').replace('class-', '').trim();
-      filter.className = { $regex: new RegExp(`^${cleanClass}$|^Class ${cleanClass}$|^class_${cleanClass}$`, 'i') };
+      const classNum = normalizeClassNumber(targetClass);
+      if (classNum) {
+        filter.className = { $regex: new RegExp(`^${classNum}$|^Class ${classNum}$|^class_${classNum}$`, 'i') };
+      }
     }
 
     if (targetSection && targetSection !== 'All') {
@@ -230,7 +246,19 @@ exports.getMarks = async (req, res) => {
       filter.studentId = String(studentId).trim();
     }
 
-    const marks = await Mark.find(filter).sort({ roll: 1, studentId: 1 });
+    let marks = await Mark.find(filter).sort({ roll: 1, studentId: 1 });
+
+    // If exam has target group (for Class 9 and 10), ensure we only return marks of eligible students
+    if (examDoc && normalizeClassNumber(examDoc.className) >= 9 && examDoc.stream) {
+      const studentIds = marks.map((m) => m.studentId);
+      if (studentIds.length > 0) {
+        const students = await Student.find({ studentId: { $in: studentIds } });
+        const eligibleStudentIdSet = new Set(
+          students.filter((s) => isStudentEligibleForExam(s, examDoc)).map((s) => s.studentId)
+        );
+        marks = marks.filter((m) => eligibleStudentIdSet.has(m.studentId));
+      }
+    }
 
     res.status(200).json({
       success: true,
