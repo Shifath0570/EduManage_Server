@@ -1,6 +1,11 @@
 const Student = require('../models/Student');
+const {
+  normalizeClassNumber,
+  normalizeGroup,
+  getClassSubjectMapKey
+} = require('../config/classSubjects');
 
-// Get all students (with optional filtering by className, section, status)
+// Get all students (with optional filtering by className, section, status, stream/group)
 exports.getStudents = async (req, res) => {
   try {
     const { className, class: classParam, section, status, stream, group } = req.query;

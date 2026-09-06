@@ -1,9 +1,29 @@
 const Exam = require('../models/Exam');
+const {
+  normalizeClassNumber,
+  normalizeGroup,
+  getValidSubjects,
+  isValidSubject
+} = require('../config/classSubjects');
 
 // Create a new exam
 exports.createExam = async (req, res) => {
   try {
-    const { examName, examType, className, class: classParam, section, subject, totalMarks, passMarks, examDate, status, description } = req.body;
+    const {
+      examName,
+      examType,
+      className,
+      class: classParam,
+      section,
+      stream,
+      group,
+      subject,
+      totalMarks,
+      passMarks,
+      examDate,
+      status,
+      description
+    } = req.body;
 
     if (!examName || (!className && !classParam) || !examDate) {
       return res.status(400).json({
@@ -13,8 +33,56 @@ exports.createExam = async (req, res) => {
     }
 
     const rawClass = className || classParam;
-    const cleanClass = rawClass.replace('class_', '').replace('Class', '').replace('class-', '').trim();
-    const formattedClass = `Class ${cleanClass}`;
+    const classNum = normalizeClassNumber(rawClass);
+
+    if (!classNum || classNum < 1 || classNum > 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Target Class must be between Class 1 and Class 10.'
+      });
+    }
+
+    const formattedClass = `Class ${classNum}`;
+    const rawGroup = stream || group || null;
+
+    let resolvedGroup = null;
+    if (classNum >= 9) {
+      const normGroup = normalizeGroup(rawGroup);
+      if (!normGroup) {
+        return res.status(400).json({
+          success: false,
+          message: `Please select a valid Group (Science, Business, or Humanities) for ${formattedClass}.`
+        });
+      }
+      resolvedGroup = normGroup === 'science' ? 'Science' : normGroup === 'businessStudies' ? 'Business' : 'Humanities';
+    } else {
+      // For Class 1 to 8, groups are not applicable
+      if (rawGroup && normalizeGroup(rawGroup)) {
+        return res.status(400).json({
+          success: false,
+          message: `Groups/Streams are only applicable for Class 9 and Class 10.`
+        });
+      }
+      resolvedGroup = null;
+    }
+
+    if (!subject) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please select a Subject.'
+      });
+    }
+
+    // Validate that the subject is valid for the Class + Group
+    const validSubject = isValidSubject(formattedClass, resolvedGroup, subject);
+    if (!validSubject) {
+      const validSubjectsList = getValidSubjects(formattedClass, resolvedGroup);
+      return res.status(400).json({
+        success: false,
+        message: `"${subject}" is not a valid subject for ${formattedClass}${resolvedGroup ? ` (${resolvedGroup})` : ''}. Valid subjects: ${validSubjectsList.join(', ')}`
+      });
+    }
+
     const cleanSection = section ? section.toUpperCase().replace('SECTION', '').trim() : 'A';
 
     const exam = await Exam.create({
@@ -22,9 +90,10 @@ exports.createExam = async (req, res) => {
       examType: examType || 'Mid Term',
       className: formattedClass,
       section: cleanSection,
-      subject: subject || 'All Subjects',
+      stream: resolvedGroup,
+      subject: subject.trim(),
       totalMarks: totalMarks ? Number(totalMarks) : 100,
-      passMarks: passMarks ? Number(passMarks) : 40,
+      passMarks: passMarks !== undefined ? Number(passMarks) : 40,
       examDate: String(examDate).trim(),
       status: status || 'Active',
       description: description || ''
@@ -47,19 +116,29 @@ exports.createExam = async (req, res) => {
 // Get all exams with optional filtering
 exports.getExams = async (req, res) => {
   try {
-    const { className, class: classParam, section, status } = req.query;
+    const { className, class: classParam, section, status, stream, group } = req.query;
 
     const filter = {};
     const targetClass = className || classParam;
 
     if (targetClass && targetClass !== 'All') {
-      const cleanClass = targetClass.replace('class_', '').replace('Class', '').replace('class-', '').trim();
-      filter.className = { $regex: new RegExp(`^${cleanClass}$|^Class ${cleanClass}$|^class_${cleanClass}$`, 'i') };
+      const classNum = normalizeClassNumber(targetClass);
+      if (classNum) {
+        filter.className = { $regex: new RegExp(`^${classNum}$|^Class ${classNum}$|^class_${classNum}$`, 'i') };
+      }
     }
 
     if (section && section !== 'All') {
       const cleanSection = section.toUpperCase().replace('SECTION', '').trim();
       filter.section = cleanSection;
+    }
+
+    const rawGroup = stream || group;
+    if (rawGroup && rawGroup !== 'All') {
+      const normGroup = normalizeGroup(rawGroup);
+      if (normGroup) {
+        filter.stream = { $regex: new RegExp(`^${normGroup}$|^${rawGroup}$`, 'i') };
+      }
     }
 
     if (status && status !== 'All') {
