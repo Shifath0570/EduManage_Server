@@ -1,10 +1,12 @@
 const Student = require('../models/Student');
+const { GoogleGenAI, Type } = require('@google/genai');
+const ExcelJS = require('exceljs');
 const {
   normalizeClassNumber,
   normalizeGroup,
   getClassSubjectMapKey
 } = require('../config/classSubjects');
-
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 // Get all students (with optional filtering by className, section, status, stream/group)
 exports.getStudents = async (req, res) => {
   try {
@@ -169,6 +171,109 @@ exports.deleteStudent = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
+      error: error.message
+    });
+  }
+};
+
+
+
+// AI Endpoint: Generates Mock Data using Gemini and streams down an .xlsx file
+exports.generateStudentExcel = async (req, res) => {
+  try {
+    const { count = 10, className = 'class_9_science' } = req.body;
+
+    // Strict JSON Schema for Structured Gemini Output
+    const studentSchema = {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          studentId: { type: Type.STRING },
+          name: { type: Type.STRING },
+          roll: { type: Type.STRING },
+          email: { type: Type.STRING },
+          gender: { type: Type.STRING },
+          phone: { type: Type.STRING },
+          dateOfBirth: { type: Type.STRING },
+          admissionDate: { type: Type.STRING },
+          className: { type: Type.STRING },
+          section: { type: Type.STRING },
+          guardianName: { type: Type.STRING },
+          guardianPhone: { type: Type.STRING },
+          address: { type: Type.STRING },
+        },
+        required: [
+          'studentId', 'name', 'roll', 'email', 'gender',
+          'phone', 'dateOfBirth', 'admissionDate', 'className',
+          'section', 'guardianName', 'guardianPhone', 'address'
+        ],
+      },
+    };
+
+    // 1. Request dynamic structured JSON records from Gemini 2.5 Flash
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `Generate realistic mock student records for ${count} students in ${className}. Use realistic Bangladeshi names, valid local phone numbers (+880...), real-looking addresses, valid dates, and sequential roll numbers starting from 1.`,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: studentSchema,
+        temperature: 0.7,
+      },
+    });
+
+    const students = JSON.parse(response.text);
+
+    // 2. Build the Excel Sheet via ExcelJS
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Generated Students');
+
+    worksheet.columns = [
+      { header: 'Student ID', key: 'studentId', width: 15 },
+      { header: 'Full Name', key: 'name', width: 22 },
+      { header: 'Roll', key: 'roll', width: 10 },
+      { header: 'Email', key: 'email', width: 25 },
+      { header: 'Gender', key: 'gender', width: 10 },
+      { header: 'Phone', key: 'phone', width: 18 },
+      { header: 'Date of Birth', key: 'dateOfBirth', width: 15 },
+      { header: 'Admission Date', key: 'admissionDate', width: 15 },
+      { header: 'Class Name', key: 'className', width: 20 },
+      { header: 'Section', key: 'section', width: 10 },
+      { header: 'Guardian Name', key: 'guardianName', width: 22 },
+      { header: 'Guardian Phone', key: 'guardianPhone', width: 18 },
+      { header: 'Address', key: 'address', width: 30 },
+    ];
+
+    // Header styling
+    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFF' } };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: '081838' },
+    };
+
+    // Add rows
+    students.forEach((student) => {
+      worksheet.addRow(student);
+    });
+
+    // 3. Output file response headers and stream stream workbook
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=students_${className}_${Date.now()}.xlsx`
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error('Error generating AI Excel data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate Excel sheet using AI',
       error: error.message
     });
   }
