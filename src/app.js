@@ -36,6 +36,7 @@ const markRoutes = require('./routes/markRoutes');
 const assignmentRoutes = require('./routes/assignmentRoutes');
 const feeRoutes = require('./routes/feeRoutes');
 const salaryRoutes = require('./routes/salaryRoutes');
+const questionPaperRoutes = require('./routes/questionPaperRoutes');
 
 // Use routes
 app.use('/api/notices', noticeRoutes);
@@ -47,6 +48,7 @@ app.use('/api/marks', markRoutes);
 app.use('/api/assignments', assignmentRoutes);
 app.use('/api/fees', feeRoutes);
 app.use('/api/salaries', salaryRoutes);
+app.use('/api/question-papers', questionPaperRoutes);
 
 // Welcome route
 app.get('/', (req, res) => {
