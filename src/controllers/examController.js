@@ -1,4 +1,7 @@
+const mongoose = require('mongoose');
 const Exam = require('../models/Exam');
+const Assignment = require('../models/Assignment');
+const Teacher = require('../models/Teacher');
 const {
   normalizeClassNumber,
   normalizeGroup,
@@ -6,9 +9,138 @@ const {
   isValidSubject
 } = require('../config/classSubjects');
 
+/**
+ * Resolves user identity, role, and teacher assignments from request
+ */
+async function resolveUserAndAssignments(req) {
+  const role = (
+    req.user?.role ||
+    req.headers['x-user-role'] ||
+    req.body?.createdByRole ||
+    req.body?.teacherRole ||
+    req.query?.userRole ||
+    'admin'
+  ).toLowerCase().trim();
+
+  const email = (
+    req.user?.email ||
+    req.headers['x-user-email'] ||
+    req.body?.createdByEmail ||
+    req.body?.teacherEmail ||
+    req.query?.teacherEmail ||
+    req.query?.email ||
+    ''
+  ).toLowerCase().trim();
+
+  const userId =
+    req.user?.id ||
+    req.headers['x-user-id'] ||
+    req.body?.createdBy ||
+    req.query?.userId ||
+    null;
+
+  const userName =
+    req.user?.name ||
+    req.headers['x-user-name'] ||
+    req.body?.createdByName ||
+    req.body?.teacherName ||
+    '';
+
+  if (role !== 'teacher') {
+    return { isTeacher: false, role: role || 'admin', email, userId, userName, assignments: [] };
+  }
+
+  // Find all assignments for this teacher by email, userId, or matching Teacher record
+  const orQueries = [];
+  if (email) {
+    orQueries.push({ teacherEmail: email });
+  }
+  if (userId) {
+    orQueries.push({ teacherId: String(userId) });
+  }
+
+  let teacherDoc = null;
+  if (email) {
+    teacherDoc = await Teacher.findOne({ email });
+    if (teacherDoc) {
+      orQueries.push({ teacherId: String(teacherDoc._id) });
+      if (teacherDoc.teacherId) {
+        orQueries.push({ teacherId: String(teacherDoc.teacherId) });
+      }
+    }
+  }
+
+  let assignments = [];
+  if (orQueries.length > 0) {
+    assignments = await Assignment.find({ $or: orQueries, status: { $ne: 'Inactive' } });
+  }
+
+  return {
+    isTeacher: true,
+    role: 'teacher',
+    email,
+    userId: userId || (teacherDoc ? String(teacherDoc._id) : null),
+    userName: userName || (teacherDoc ? teacherDoc.fullName : 'Teacher'),
+    teacherDoc,
+    assignments
+  };
+}
+
+/**
+ * Validates if a Teacher is authorized to create/manage an exam for a class, group, and subject
+ */
+function isTeacherAuthorizedForExam(teacherInfo, formattedClass, stream, subject) {
+  if (!teacherInfo.isTeacher) return true; // Admin has full access
+
+  const { assignments, teacherDoc } = teacherInfo;
+  const targetClassNum = normalizeClassNumber(formattedClass);
+  const targetSubject = String(subject || '').toLowerCase().trim();
+  const targetStream = normalizeGroup(stream);
+
+  // 1. Check Assignments collection
+  if (assignments && assignments.length > 0) {
+    const isAssigned = assignments.some((a) => {
+      const aClassNum = normalizeClassNumber(a.classId);
+      if (aClassNum !== targetClassNum) return false;
+
+      // Group check for Class 9/10
+      if (targetClassNum >= 9) {
+        const aGroup = normalizeGroup(a.groupId);
+        if (aGroup && aGroup !== 'general' && aGroup !== targetStream) {
+          return false;
+        }
+      }
+
+      // Subject check
+      const aSubject = String(a.subjectId || '').toLowerCase().trim();
+      if (aSubject && aSubject !== 'all subjects' && aSubject !== targetSubject) {
+        const normASub = aSubject.replace(/[\s_-]+/g, '');
+        const normTSub = targetSubject.replace(/[\s_-]+/g, '');
+        if (normASub !== normTSub) return false;
+      }
+
+      return true;
+    });
+
+    if (isAssigned) return true;
+  }
+
+  // 2. Fallback check Teacher's subjectSpecialization if no explicit course assignment exists
+  if (teacherDoc && teacherDoc.subjectSpecialization) {
+    const spec = String(teacherDoc.subjectSpecialization).toLowerCase().trim();
+    if (spec.includes(targetSubject) || targetSubject.includes(spec)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 // Create a new exam
 exports.createExam = async (req, res) => {
   try {
+    const userContext = await resolveUserAndAssignments(req);
+
     const {
       examName,
       examType,
@@ -58,13 +190,6 @@ exports.createExam = async (req, res) => {
       }
       resolvedGroup = normGroup === 'science' ? 'Science' : normGroup === 'businessStudies' ? 'Business' : 'Humanities';
     } else {
-      // For Class 1 to 8, groups are not applicable
-      if (rawGroup && normalizeGroup(rawGroup)) {
-        return res.status(400).json({
-          success: false,
-          message: `Groups/Streams are only applicable for Class 9 and Class 10.`
-        });
-      }
       resolvedGroup = null;
     }
 
@@ -83,6 +208,24 @@ exports.createExam = async (req, res) => {
         success: false,
         message: `"${subject}" is not a valid subject for ${formattedClass}${resolvedGroup ? ` (${resolvedGroup})` : ''}. Valid subjects: ${validSubjectsList.join(', ')}`
       });
+    }
+
+    // STRICT TEACHER AUTHORIZATION CHECK
+    if (userContext.isTeacher) {
+      if (!userContext.assignments || userContext.assignments.length === 0) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: You have no assigned classes or subjects to create exams. Please contact the school administrator.'
+        });
+      }
+
+      const authorized = isTeacherAuthorizedForExam(userContext, formattedClass, resolvedGroup, subject);
+      if (!authorized) {
+        return res.status(403).json({
+          success: false,
+          message: `Forbidden: You are not authorized to create an exam for ${formattedClass}${resolvedGroup ? ` (${resolvedGroup})` : ''} - ${subject}. Teachers may ONLY create exams for their assigned Class, Group, and Subject.`
+        });
+      }
     }
 
     const cleanSection = section ? section.toUpperCase().replace('SECTION', '').trim() : 'A';
@@ -117,7 +260,11 @@ exports.createExam = async (req, res) => {
       duration: duration || '2 Hours 30 Minutes',
       questionConfiguration: formattedQuestionConfig,
       status: status || 'Active',
-      description: description || ''
+      description: description || '',
+      createdBy: userContext.userId || req.body.createdBy || null,
+      createdByEmail: userContext.email || req.body.createdByEmail || null,
+      createdByName: userContext.userName || req.body.createdByName || (userContext.isTeacher ? 'Teacher' : 'Admin'),
+      createdByRole: userContext.isTeacher ? 'teacher' : (req.body.createdByRole || 'admin')
     });
 
     res.status(201).json({

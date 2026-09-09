@@ -1,15 +1,32 @@
 const Assignment = require('../models/Assignment');
 
-// Get all assignments
+// Get all assignments (with optional filtering by teacherEmail, teacherId, classId)
 exports.getAssignments = async (req, res) => {
   try {
+    const { teacherEmail, teacherId, classId, status } = req.query;
+    const filter = {};
+
+    if (teacherEmail) {
+      filter.teacherEmail = teacherEmail.toLowerCase().trim();
+    }
+    if (teacherId) {
+      filter.teacherId = String(teacherId).trim();
+    }
+    if (classId) {
+      filter.classId = classId.trim();
+    }
+    if (status) {
+      filter.status = status;
+    }
+
     // Sort by createdAt in descending order (newest first) and populate teacher details
-    const assignments = await Assignment.find()
+    const assignments = await Assignment.find(filter)
       .populate('teacherId', 'fullName email phone')
       .sort({ createdAt: -1 });
 
     res.status(200).json({
       success: true,
+      count: assignments.length,
       data: assignments
     });
   } catch (error) {

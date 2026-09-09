@@ -79,6 +79,27 @@ const examSchema = new mongoose.Schema({
     type: String,
     trim: true,
     default: ''
+  },
+  createdBy: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  createdByEmail: {
+    type: String,
+    trim: true,
+    lowercase: true,
+    default: null
+  },
+  createdByName: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  createdByRole: {
+    type: String,
+    enum: ['admin', 'teacher', 'Admin', 'Teacher'],
+    default: 'admin'
   }
 }, {
   collection: 'Exams',
