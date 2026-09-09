@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const Exam = require('../models/Exam');
 const QuestionPaper = require('../models/QuestionPaper');
-const { generateExamQuestionPaper } = require('../services/aiQuestionService');
+const { generateExamQuestionPaper, validateAndNormalizeConfig } = require('../services/aiQuestionService');
 
 /**
  * Generate (or fetch existing) Question Paper for an Exam
@@ -10,7 +10,7 @@ const { generateExamQuestionPaper } = require('../services/aiQuestionService');
 exports.generateQuestionPaper = async (req, res) => {
   try {
     const { examId } = req.params;
-    const { force = false } = req.body || {};
+    const { force = false, questionConfiguration } = req.body || {};
 
     if (!examId || !mongoose.isValidObjectId(examId)) {
       return res.status(400).json({
@@ -37,8 +37,14 @@ exports.generateQuestionPaper = async (req, res) => {
       });
     }
 
-    // Generate Question Paper via AI Service
-    const aiResult = await generateExamQuestionPaper(examDoc);
+    // Resolve question configuration from payload, exam document, or existing paper
+    const activeConfig =
+      questionConfiguration ||
+      existingPaper?.questionConfiguration ||
+      examDoc.questionConfiguration;
+
+    // Generate Question Paper via AI Service with strict configuration enforcement
+    const aiResult = await generateExamQuestionPaper(examDoc, activeConfig);
 
     const paperData = {
       examId: examDoc._id,
@@ -53,6 +59,7 @@ exports.generateQuestionPaper = async (req, res) => {
       duration: examDoc.duration || '2 Hours 30 Minutes',
       generalInstructions: aiResult.generalInstructions,
       sections: aiResult.sections,
+      questionConfiguration: aiResult.questionConfiguration,
       generatedBy: 'AI Curriculum Assistant'
     };
 
@@ -62,14 +69,19 @@ exports.generateQuestionPaper = async (req, res) => {
       { upsert: true, new: true, runValidators: true }
     );
 
+    // Also persist questionConfiguration on Exam document if not already set
+    if (aiResult.questionConfiguration && (!examDoc.questionConfiguration || !examDoc.questionConfiguration.mcq)) {
+      await Exam.findByIdAndUpdate(examDoc._id, { questionConfiguration: aiResult.questionConfiguration });
+    }
+
     res.status(201).json({
       success: true,
-      message: 'Question paper generated successfully.',
+      message: 'Question paper generated successfully according to configured structure.',
       data: savedPaper
     });
   } catch (error) {
     console.error('Generate Question Paper error:', error);
-    res.status(500).json({
+    res.status(400).json({
       success: false,
       message: error.message || 'Failed to generate question paper.'
     });
@@ -118,13 +130,13 @@ exports.getQuestionPaperByExamId = async (req, res) => {
 };
 
 /**
- * Update Question Paper Content
+ * Update Question Paper Content & Configuration
  * PUT /api/question-papers/:id
  */
 exports.updateQuestionPaper = async (req, res) => {
   try {
     const { id } = req.params;
-    const { sections, generalInstructions, duration } = req.body;
+    const { sections, generalInstructions, duration, questionConfiguration } = req.body;
 
     if (!id || !mongoose.isValidObjectId(id)) {
       return res.status(400).json({
@@ -137,6 +149,7 @@ exports.updateQuestionPaper = async (req, res) => {
     if (sections) updateFields.sections = sections;
     if (generalInstructions) updateFields.generalInstructions = generalInstructions;
     if (duration) updateFields.duration = duration;
+    if (questionConfiguration) updateFields.questionConfiguration = questionConfiguration;
 
     const updated = await QuestionPaper.findByIdAndUpdate(
       id,
@@ -166,12 +179,13 @@ exports.updateQuestionPaper = async (req, res) => {
 };
 
 /**
- * Regenerate Question Paper for an Exam
+ * Regenerate Question Paper for an Exam strictly according to Configuration
  * POST /api/question-papers/regenerate/:examId
  */
 exports.regenerateQuestionPaper = async (req, res) => {
   try {
     const { examId } = req.params;
+    const { questionConfiguration } = req.body || {};
 
     if (!examId || !mongoose.isValidObjectId(examId)) {
       return res.status(400).json({
@@ -188,7 +202,15 @@ exports.regenerateQuestionPaper = async (req, res) => {
       });
     }
 
-    const aiResult = await generateExamQuestionPaper(examDoc);
+    const existingPaper = await QuestionPaper.findOne({ examId });
+
+    // Use passed configuration, existing questionPaper configuration, or exam document configuration
+    const activeConfig =
+      questionConfiguration ||
+      existingPaper?.questionConfiguration ||
+      examDoc.questionConfiguration;
+
+    const aiResult = await generateExamQuestionPaper(examDoc, activeConfig);
 
     const paperData = {
       examId: examDoc._id,
@@ -203,6 +225,7 @@ exports.regenerateQuestionPaper = async (req, res) => {
       duration: examDoc.duration || '2 Hours 30 Minutes',
       generalInstructions: aiResult.generalInstructions,
       sections: aiResult.sections,
+      questionConfiguration: aiResult.questionConfiguration,
       generatedBy: 'AI Curriculum Assistant (Regenerated)'
     };
 
@@ -214,12 +237,12 @@ exports.regenerateQuestionPaper = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Question paper regenerated successfully.',
+      message: 'Question paper regenerated successfully according to configured structure.',
       data: savedPaper
     });
   } catch (error) {
     console.error('Regenerate Question Paper error:', error);
-    res.status(500).json({
+    res.status(400).json({
       success: false,
       message: error.message || 'Failed to regenerate question paper.'
     });

@@ -113,6 +113,23 @@ const questionPaperSchema = new mongoose.Schema({
     type: [sectionSchema],
     default: []
   },
+  questionConfiguration: {
+    mcq: {
+      count: { type: Number, default: 0 },
+      marksPerQuestion: { type: Number, default: 1 },
+      totalMarks: { type: Number, default: 0 }
+    },
+    short: {
+      count: { type: Number, default: 0 },
+      marksPerQuestion: { type: Number, default: 2 },
+      totalMarks: { type: Number, default: 0 }
+    },
+    creative: {
+      count: { type: Number, default: 0 },
+      marksPerQuestion: { type: Number, default: 5 },
+      totalMarks: { type: Number, default: 0 }
+    }
+  },
   generatedBy: {
     type: String,
     trim: true,

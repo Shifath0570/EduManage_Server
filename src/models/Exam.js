@@ -48,6 +48,28 @@ const examSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Exam date is required']
   },
+  duration: {
+    type: String,
+    trim: true,
+    default: '2 Hours 30 Minutes'
+  },
+  questionConfiguration: {
+    mcq: {
+      count: { type: Number, default: 0 },
+      marksPerQuestion: { type: Number, default: 1 },
+      totalMarks: { type: Number, default: 0 }
+    },
+    short: {
+      count: { type: Number, default: 0 },
+      marksPerQuestion: { type: Number, default: 2 },
+      totalMarks: { type: Number, default: 0 }
+    },
+    creative: {
+      count: { type: Number, default: 0 },
+      marksPerQuestion: { type: Number, default: 5 },
+      totalMarks: { type: Number, default: 0 }
+    }
+  },
   status: {
     type: String,
     enum: ['Upcoming', 'Active', 'Completed'],

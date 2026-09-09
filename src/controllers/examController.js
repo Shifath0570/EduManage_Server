@@ -21,6 +21,8 @@ exports.createExam = async (req, res) => {
       totalMarks,
       passMarks,
       examDate,
+      duration,
+      questionConfiguration,
       status,
       description
     } = req.body;
@@ -85,6 +87,23 @@ exports.createExam = async (req, res) => {
 
     const cleanSection = section ? section.toUpperCase().replace('SECTION', '').trim() : 'A';
 
+    // Format questionConfiguration if provided
+    let formattedQuestionConfig = null;
+    if (questionConfiguration) {
+      const mcqCount = Number(questionConfiguration.mcq?.count) || 0;
+      const mcqMarks = Number(questionConfiguration.mcq?.marksPerQuestion) || 1;
+      const shortCount = Number(questionConfiguration.short?.count) || 0;
+      const shortMarks = Number(questionConfiguration.short?.marksPerQuestion) || 2;
+      const creativeCount = Number(questionConfiguration.creative?.count) || 0;
+      const creativeMarks = Number(questionConfiguration.creative?.marksPerQuestion) || 5;
+
+      formattedQuestionConfig = {
+        mcq: { count: mcqCount, marksPerQuestion: mcqMarks, totalMarks: mcqCount * mcqMarks },
+        short: { count: shortCount, marksPerQuestion: shortMarks, totalMarks: shortCount * shortMarks },
+        creative: { count: creativeCount, marksPerQuestion: creativeMarks, totalMarks: creativeCount * creativeMarks }
+      };
+    }
+
     const exam = await Exam.create({
       examName: examName.trim(),
       examType: examType || 'Mid Term',
@@ -95,6 +114,8 @@ exports.createExam = async (req, res) => {
       totalMarks: totalMarks ? Number(totalMarks) : 100,
       passMarks: passMarks !== undefined ? Number(passMarks) : 40,
       examDate: String(examDate).trim(),
+      duration: duration || '2 Hours 30 Minutes',
+      questionConfiguration: formattedQuestionConfig,
       status: status || 'Active',
       description: description || ''
     });
