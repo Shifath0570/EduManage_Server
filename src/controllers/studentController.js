@@ -98,6 +98,42 @@ exports.getStudentById = async (req, res) => {
   }
 };
 
+
+
+// Get student by User ID, Mongo _id, or Student Roll/ID
+exports.getStudentByStudentId = async (req, res) => {
+  try {
+    const { stuId } = req.params;
+
+    // Searches for matching string ID or populated object ID
+    const student = await Student.findOne({
+      $or: [
+        { stuId: stuId },
+        { 'stuId._id': stuId }
+      ]
+    });
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student record not found for the provided stuId'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: student
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve student record',
+      error: error.message
+    });
+  }
+};
+
+
 // Create a new student
 exports.createStudent = async (req, res) => {
   try {
