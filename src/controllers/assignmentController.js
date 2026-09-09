@@ -42,29 +42,59 @@ exports.getAssignmentById = async (req, res) => {
   }
 };
 
+
+
+
 // Create a new assignment
 exports.createAssignment = async (req, res) => {
   try {
     const assignmentInfo = req.body;
 
-    const result = await Assignment.create({
-      ...assignmentInfo,
-      createdAt: new Date()
-    });
+    const result = await Assignment.create(assignmentInfo);
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: 'Assignment created successfully',
       data: result
     });
   } catch (error) {
-    res.status(500).json({
+    // Catch Mongoose Schema Validation Errors (HTTP 400 Bad Request)
+    if (error.name === 'ValidationError') {
+      const validationMessages = Object.values(error.errors).map(
+        (err) => err.message
+      );
+
+      return res.status(400).json({
+        success: false,
+        message: 'Validation Error',
+        errors: validationMessages
+      });
+    }
+
+    // Catch Duplicate Key Errors (HTTP 409 Conflict)
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'Duplicate assignment entry found',
+        error: error.keyValue
+      });
+    }
+
+    // Unhandled application errors (HTTP 500 Internal Server Error)
+    console.error('Create Assignment Error:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Failed to create assignment',
+      message: 'Internal server error occurred while creating assignment',
       error: error.message
     });
   }
 };
+
+
+
+
+
+
 
 // Update assignment by ID
 exports.updateAssignment = async (req, res) => {
