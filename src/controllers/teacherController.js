@@ -42,6 +42,40 @@ exports.getTeacherById = async (req, res) => {
   }
 };
 
+
+// Get teacher by custom teacherId (or User ID reference)
+exports.getTeacherByTeacherId = async (req, res) => {
+  try {
+    const { teacherId } = req.params;
+
+    // Searches for matching string ID or populated object ID
+    const teacher = await Teacher.findOne({
+      $or: [
+        { teacherId: teacherId },
+        { 'teacherId._id': teacherId }
+      ]
+    });
+
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: 'Teacher record not found for the provided teacherId'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: teacher
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve teacher record',
+      error: error.message
+    });
+  }
+};
+
 // Create a new teacher
 exports.createTeacher = async (req, res) => {
   try {
