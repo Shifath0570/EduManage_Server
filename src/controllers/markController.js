@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const Mark = require('../models/Mark');
 const Exam = require('../models/Exam');
 const Student = require('../models/Student');
+const Assignment = require('../models/Assignment');
+const Teacher = require('../models/Teacher');
 const {
   isStudentEligibleForExam,
   normalizeClassNumber,
@@ -31,11 +33,134 @@ const calculateGradeAndGpa = (marksObtained, totalMarks = 100) => {
 };
 
 /**
- * Save or update marks for students (bulk upsert with eligibility validation)
+ * Resolves user identity, role, and teacher assignments from request
+ */
+async function resolveUserAndAssignments(req) {
+  const role = (
+    req.user?.role ||
+    req.headers['x-user-role'] ||
+    req.body?.teacherRole ||
+    req.query?.userRole ||
+    'admin'
+  ).toLowerCase().trim();
+
+  const email = (
+    req.user?.email ||
+    req.headers['x-user-email'] ||
+    req.body?.teacherEmail ||
+    req.query?.teacherEmail ||
+    req.query?.email ||
+    ''
+  ).toLowerCase().trim();
+
+  const userId =
+    req.user?.id ||
+    req.headers['x-user-id'] ||
+    req.body?.teacherId ||
+    req.query?.userId ||
+    null;
+
+  if (role !== 'teacher') {
+    return { isTeacher: false, role: role || 'admin', email, userId, assignments: [] };
+  }
+
+  const orQueries = [];
+  if (email) {
+    orQueries.push({ teacherEmail: email });
+  }
+  if (userId) {
+    orQueries.push({ teacherId: String(userId) });
+  }
+
+  let teacherDoc = null;
+  if (email) {
+    teacherDoc = await Teacher.findOne({ email });
+    if (teacherDoc) {
+      orQueries.push({ teacherId: String(teacherDoc._id) });
+      if (teacherDoc.teacherId) {
+        orQueries.push({ teacherId: String(teacherDoc.teacherId) });
+      }
+    }
+  }
+
+  let assignments = [];
+  if (orQueries.length > 0) {
+    assignments = await Assignment.find({ $or: orQueries, status: { $ne: 'Inactive' } });
+  }
+
+  return {
+    isTeacher: true,
+    role: 'teacher',
+    email,
+    userId: userId || (teacherDoc ? String(teacherDoc._id) : null),
+    teacherDoc,
+    assignments
+  };
+}
+
+/**
+ * Validates if teacher is authorized to enter/edit marks for a given class, section, stream, and subject
+ */
+function isTeacherAuthorizedForMarks(teacherInfo, targetClassNum, targetSection, targetStream, targetSubject) {
+  if (!teacherInfo.isTeacher) return true; // Admin has full access
+
+  const { assignments, teacherDoc } = teacherInfo;
+  const cleanSub = String(targetSubject || '').toLowerCase().trim();
+  const cleanSec = String(targetSection || 'A').toUpperCase().replace('SECTION', '').trim();
+  const normGroup = normalizeGroup(targetStream);
+
+  if (assignments && assignments.length > 0) {
+    const isAssigned = assignments.some((a) => {
+      // 1. Class match
+      const aClassNum = normalizeClassNumber(a.classId);
+      if (aClassNum !== targetClassNum) return false;
+
+      // 2. Section match (if section is assigned)
+      if (a.sectionId && a.sectionId !== 'All') {
+        const aSec = String(a.sectionId).toUpperCase().replace('SECTION', '').trim();
+        if (aSec !== cleanSec) return false;
+      }
+
+      // 3. Group match for Class 9/10
+      if (targetClassNum >= 9) {
+        const aGroup = normalizeGroup(a.groupId);
+        if (aGroup && aGroup !== 'general' && aGroup !== normGroup) {
+          return false;
+        }
+      }
+
+      // 4. Subject match
+      const aSub = String(a.subjectId || '').toLowerCase().trim();
+      if (aSub && aSub !== 'all subjects' && aSub !== cleanSub) {
+        const normASub = aSub.replace(/[\s_-]+/g, '');
+        const normTSub = cleanSub.replace(/[\s_-]+/g, '');
+        if (normASub !== normTSub) return false;
+      }
+
+      return true;
+    });
+
+    if (isAssigned) return true;
+  }
+
+  if (teacherDoc && teacherDoc.subjectSpecialization) {
+    const spec = String(teacherDoc.subjectSpecialization).toLowerCase().trim();
+    if (spec.includes(cleanSub) || cleanSub.includes(spec)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Save or update marks for students (bulk upsert with eligibility validation and teacher authorization)
  * POST /api/marks
  */
 exports.saveMarks = async (req, res) => {
   try {
+    const userContext = await resolveUserAndAssignments(req);
+
     const { className, class: classParam, section, exam, examId, subject, records } = req.body;
 
     const targetClass = className || classParam;
@@ -84,7 +209,25 @@ exports.saveMarks = async (req, res) => {
       });
     }
 
-    // 3. Validate requested Subject against Exam Scope (if exam is subject-specific)
+    // 3. Strict Teacher Authorization check
+    if (userContext.isTeacher) {
+      const isAuthorized = isTeacherAuthorizedForMarks(
+        userContext,
+        examClassNum,
+        examDoc.section,
+        examDoc.stream,
+        subject
+      );
+
+      if (!isAuthorized) {
+        return res.status(403).json({
+          success: false,
+          message: `Forbidden: You are not authorized to enter or modify marks for ${examDoc.className}${examDoc.stream ? ` (${examDoc.stream})` : ''} Section ${examDoc.section} (${subject}). Teachers may only enter marks for their assigned class, section, and subject.`
+        });
+      }
+    }
+
+    // 4. Validate requested Subject against Exam Scope (if exam is subject-specific)
     if (examDoc.subject && examDoc.subject !== 'All Subjects') {
       if (subject.trim().toLowerCase() !== examDoc.subject.trim().toLowerCase()) {
         return res.status(400).json({

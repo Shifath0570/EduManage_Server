@@ -1,7 +1,143 @@
 const mongoose = require('mongoose');
 const Exam = require('../models/Exam');
 const QuestionPaper = require('../models/QuestionPaper');
+const Assignment = require('../models/Assignment');
+const Teacher = require('../models/Teacher');
 const { generateExamQuestionPaper, validateAndNormalizeConfig } = require('../services/aiQuestionService');
+const {
+  normalizeClassNumber,
+  normalizeGroup
+} = require('../config/classSubjects');
+
+/**
+ * Resolves user identity, role, and teacher assignments from request
+ */
+async function resolveUserAndAssignments(req) {
+  const role = (
+    req.user?.role ||
+    req.headers['x-user-role'] ||
+    req.body?.teacherRole ||
+    req.query?.userRole ||
+    'admin'
+  ).toLowerCase().trim();
+
+  const email = (
+    req.user?.email ||
+    req.headers['x-user-email'] ||
+    req.body?.teacherEmail ||
+    req.query?.teacherEmail ||
+    req.query?.email ||
+    ''
+  ).toLowerCase().trim();
+
+  const userId =
+    req.user?.id ||
+    req.headers['x-user-id'] ||
+    req.body?.teacherId ||
+    req.query?.userId ||
+    null;
+
+  if (role !== 'teacher') {
+    return { isTeacher: false, role: role || 'admin', email, userId, assignments: [] };
+  }
+
+  const orQueries = [];
+  if (email) {
+    orQueries.push({ teacherEmail: email });
+  }
+  if (userId) {
+    orQueries.push({ teacherId: String(userId) });
+  }
+
+  let teacherDoc = null;
+  if (email) {
+    teacherDoc = await Teacher.findOne({ email });
+    if (teacherDoc) {
+      orQueries.push({ teacherId: String(teacherDoc._id) });
+      if (teacherDoc.teacherId) {
+        orQueries.push({ teacherId: String(teacherDoc.teacherId) });
+      }
+    }
+  }
+
+  let assignments = [];
+  if (orQueries.length > 0) {
+    assignments = await Assignment.find({ $or: orQueries, status: { $ne: 'Inactive' } });
+  }
+
+  return {
+    isTeacher: true,
+    role: 'teacher',
+    email,
+    userId: userId || (teacherDoc ? String(teacherDoc._id) : null),
+    teacherDoc,
+    assignments
+  };
+}
+
+/**
+ * Validates if teacher is authorized for the exam
+ */
+function isTeacherAuthorizedForExam(teacherInfo, examDoc) {
+  if (!teacherInfo.isTeacher) return true; // Admin has full access
+
+  // If teacher created the exam, they are authorized
+  if (examDoc.createdByEmail && teacherInfo.email && examDoc.createdByEmail.toLowerCase() === teacherInfo.email.toLowerCase()) {
+    return true;
+  }
+  if (examDoc.createdBy && teacherInfo.userId && String(examDoc.createdBy) === String(teacherInfo.userId)) {
+    return true;
+  }
+
+  const { assignments, teacherDoc } = teacherInfo;
+  const examClassNum = normalizeClassNumber(examDoc.className);
+  const examSub = String(examDoc.subject || '').toLowerCase().trim();
+  const examStream = normalizeGroup(examDoc.stream);
+  const examSec = (examDoc.section || 'A').toUpperCase().replace('SECTION', '').trim();
+
+  if (assignments && assignments.length > 0) {
+    const isAssigned = assignments.some((a) => {
+      // 1. Class check
+      const aClassNum = normalizeClassNumber(a.classId);
+      if (aClassNum !== examClassNum) return false;
+
+      // 2. Section check (if section assigned)
+      if (a.sectionId && a.sectionId !== 'All') {
+        const aSec = String(a.sectionId).toUpperCase().replace('SECTION', '').trim();
+        if (aSec !== examSec) return false;
+      }
+
+      // 3. Group check for Class 9/10
+      if (examClassNum >= 9) {
+        const aGroup = normalizeGroup(a.groupId);
+        if (aGroup && aGroup !== 'general' && aGroup !== examStream) {
+          return false;
+        }
+      }
+
+      // 4. Subject check
+      const aSub = String(a.subjectId || '').toLowerCase().trim();
+      if (aSub && aSub !== 'all subjects' && aSub !== examSub) {
+        const normASub = aSub.replace(/[\s_-]+/g, '');
+        const normTSub = examSub.replace(/[\s_-]+/g, '');
+        if (normASub !== normTSub) return false;
+      }
+
+      return true;
+    });
+
+    if (isAssigned) return true;
+  }
+
+  if (teacherDoc && teacherDoc.subjectSpecialization) {
+    const spec = String(teacherDoc.subjectSpecialization).toLowerCase().trim();
+    if (spec.includes(examSub) || examSub.includes(spec)) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 /**
  * Generate (or fetch existing) Question Paper for an Exam
@@ -9,6 +145,7 @@ const { generateExamQuestionPaper, validateAndNormalizeConfig } = require('../se
  */
 exports.generateQuestionPaper = async (req, res) => {
   try {
+    const userContext = await resolveUserAndAssignments(req);
     const { examId } = req.params;
     const { force = false, questionConfiguration } = req.body || {};
 
@@ -25,6 +162,17 @@ exports.generateQuestionPaper = async (req, res) => {
         success: false,
         message: 'Exam record not found.'
       });
+    }
+
+    // Strict Teacher Authorization check
+    if (userContext.isTeacher) {
+      const authorized = isTeacherAuthorizedForExam(userContext, examDoc);
+      if (!authorized) {
+        return res.status(403).json({
+          success: false,
+          message: `Forbidden: You are not authorized to generate a Question Paper for ${examDoc.examName} (${examDoc.className}${examDoc.stream ? ` - ${examDoc.stream}` : ''} Section ${examDoc.section} - ${examDoc.subject}). Teachers can only generate question papers for their assigned courses.`
+        });
+      }
     }
 
     // Check if Question Paper already exists and force regeneration is not requested
@@ -151,6 +299,21 @@ exports.updateQuestionPaper = async (req, res) => {
     if (duration) updateFields.duration = duration;
     if (questionConfiguration) updateFields.questionConfiguration = questionConfiguration;
 
+    // Check if user is teacher and verify permission
+    const userContext = await resolveUserAndAssignments(req);
+    if (userContext.isTeacher) {
+      const targetPaper = await QuestionPaper.findById(id);
+      if (targetPaper) {
+        const examDoc = await Exam.findById(targetPaper.examId);
+        if (examDoc && !isTeacherAuthorizedForExam(userContext, examDoc)) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: You are not authorized to update this question paper.'
+          });
+        }
+      }
+    }
+
     const updated = await QuestionPaper.findByIdAndUpdate(
       id,
       updateFields,
@@ -184,6 +347,7 @@ exports.updateQuestionPaper = async (req, res) => {
  */
 exports.regenerateQuestionPaper = async (req, res) => {
   try {
+    const userContext = await resolveUserAndAssignments(req);
     const { examId } = req.params;
     const { questionConfiguration } = req.body || {};
 
@@ -200,6 +364,17 @@ exports.regenerateQuestionPaper = async (req, res) => {
         success: false,
         message: 'Exam record not found.'
       });
+    }
+
+    // Strict Teacher Authorization check
+    if (userContext.isTeacher) {
+      const authorized = isTeacherAuthorizedForExam(userContext, examDoc);
+      if (!authorized) {
+        return res.status(403).json({
+          success: false,
+          message: `Forbidden: You are not authorized to regenerate a Question Paper for ${examDoc.examName} (${examDoc.className}${examDoc.stream ? ` - ${examDoc.stream}` : ''} Section ${examDoc.section} - ${examDoc.subject}). Teachers can only regenerate question papers for their assigned courses.`
+        });
+      }
     }
 
     const existingPaper = await QuestionPaper.findOne({ examId });
