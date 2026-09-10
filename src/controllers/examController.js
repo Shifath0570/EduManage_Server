@@ -281,10 +281,10 @@ exports.createExam = async (req, res) => {
   }
 };
 
-// Get all exams with optional filtering
+// Get all exams with optional filtering (supports myExams=true for teacher ownership partition)
 exports.getExams = async (req, res) => {
   try {
-    const { className, class: classParam, section, status, stream, group } = req.query;
+    const { className, class: classParam, section, status, stream, group, myExams, createdByEmail, createdBy, teacherEmail } = req.query;
 
     const filter = {};
     const targetClass = className || classParam;
@@ -311,6 +311,23 @@ exports.getExams = async (req, res) => {
 
     if (status && status !== 'All') {
       filter.status = status;
+    }
+
+    // "My Exams" filtering for logged-in teacher
+    const authorEmail = createdByEmail || teacherEmail || (req.headers['x-user-email'] ? String(req.headers['x-user-email']).toLowerCase().trim() : null);
+    const authorId = createdBy || (req.headers['x-user-id'] ? String(req.headers['x-user-id']).trim() : null);
+
+    if (myExams === 'true' && (authorEmail || authorId)) {
+      const orClauses = [];
+      if (authorEmail) {
+        orClauses.push({ createdByEmail: new RegExp(`^${authorEmail}$`, 'i') });
+      }
+      if (authorId) {
+        orClauses.push({ createdBy: authorId });
+      }
+      if (orClauses.length > 0) {
+        filter.$or = orClauses;
+      }
     }
 
     const exams = await Exam.find(filter).sort({ createdAt: -1 });
@@ -352,15 +369,121 @@ exports.getExamById = async (req, res) => {
   }
 };
 
-// Delete exam by ID
-exports.deleteExam = async (req, res) => {
+// Update exam by ID (enforcing ownership and assignment authorization for teachers)
+exports.updateExam = async (req, res) => {
   try {
+    const userContext = await resolveUserAndAssignments(req);
     const exam = await Exam.findById(req.params.id);
+
     if (!exam) {
       return res.status(404).json({
         success: false,
         message: 'Exam not found'
       });
+    }
+
+    // Ownership check for Teachers
+    if (userContext.isTeacher) {
+      const isOwner =
+        (exam.createdByEmail && userContext.email && exam.createdByEmail.toLowerCase() === userContext.email.toLowerCase()) ||
+        (exam.createdBy && userContext.userId && String(exam.createdBy) === String(userContext.userId));
+
+      if (!isOwner) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: You can only edit examinations that you created.'
+        });
+      }
+
+      // Check if updated class, group, or subject is authorized
+      const checkClass = req.body.className || exam.className;
+      const checkGroup = req.body.stream !== undefined ? req.body.stream : exam.stream;
+      const checkSubject = req.body.subject || exam.subject;
+
+      const authorized = isTeacherAuthorizedForExam(userContext, checkClass, checkGroup, checkSubject);
+      if (!authorized) {
+        return res.status(403).json({
+          success: false,
+          message: `Forbidden: You are not authorized to set exam for ${checkClass} - ${checkSubject}. Teachers may ONLY assign exams to their assigned courses.`
+        });
+      }
+    }
+
+    const updates = { ...req.body };
+    delete updates.createdBy;
+    delete updates.createdByEmail;
+    delete updates.createdByRole;
+
+    if (updates.className) {
+      const classNum = normalizeClassNumber(updates.className);
+      if (classNum) {
+        updates.className = `Class ${classNum}`;
+      }
+    }
+
+    if (updates.section) {
+      updates.section = updates.section.toUpperCase().replace('SECTION', '').trim();
+    }
+
+    if (updates.questionConfiguration) {
+      const mcqCount = Number(updates.questionConfiguration.mcq?.count) || 0;
+      const mcqMarks = Number(updates.questionConfiguration.mcq?.marksPerQuestion) || 1;
+      const shortCount = Number(updates.questionConfiguration.short?.count) || 0;
+      const shortMarks = Number(updates.questionConfiguration.short?.marksPerQuestion) || 2;
+      const creativeCount = Number(updates.questionConfiguration.creative?.count) || 0;
+      const creativeMarks = Number(updates.questionConfiguration.creative?.marksPerQuestion) || 5;
+
+      updates.questionConfiguration = {
+        mcq: { count: mcqCount, marksPerQuestion: mcqMarks, totalMarks: mcqCount * mcqMarks },
+        short: { count: shortCount, marksPerQuestion: shortMarks, totalMarks: shortCount * shortMarks },
+        creative: { count: creativeCount, marksPerQuestion: creativeMarks, totalMarks: creativeCount * creativeMarks }
+      };
+    }
+
+    const updatedExam = await Exam.findByIdAndUpdate(req.params.id, updates, {
+      new: true,
+      runValidators: true
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Exam updated successfully',
+      data: updatedExam
+    });
+  } catch (error) {
+    console.error('Update exam error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update exam'
+    });
+  }
+};
+
+// Delete exam by ID (enforcing ownership authorization for teachers)
+exports.deleteExam = async (req, res) => {
+  try {
+    const userContext = await resolveUserAndAssignments(req);
+    const exam = await Exam.findById(req.params.id);
+
+    if (!exam) {
+      return res.status(404).json({
+        success: false,
+        message: 'Exam not found'
+      });
+    }
+
+    // Ownership check for Teachers
+    if (userContext.isTeacher) {
+      const isOwner =
+        (exam.createdByEmail && userContext.email && exam.createdByEmail.toLowerCase() === userContext.email.toLowerCase()) ||
+        (exam.createdBy && userContext.userId && String(exam.createdBy) === String(userContext.userId));
+
+      if (!isOwner) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: You can only delete examinations that you created.'
+        });
+      }
     }
 
     await Exam.findByIdAndDelete(req.params.id);
