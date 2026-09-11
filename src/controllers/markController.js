@@ -416,3 +416,248 @@ exports.getMarks = async (req, res) => {
     });
   }
 };
+
+/**
+ * Get authenticated student's results with exam type filtering and summary statistics
+ * GET /api/marks/my-results
+ * GET /api/marks/student
+ */
+exports.getStudentResults = async (req, res) => {
+  try {
+    const userEmail = (
+      req.user?.email ||
+      req.headers['x-user-email'] ||
+      req.query?.email ||
+      req.query?.userEmail ||
+      ''
+    ).toLowerCase().trim();
+
+    const userId =
+      req.user?.id ||
+      req.user?._id ||
+      req.headers['x-user-id'] ||
+      req.query?.userId ||
+      req.query?.stuId ||
+      null;
+
+    const routeIdentifier = req.params?.identifier ? req.params.identifier.trim() : '';
+    const requestedExamType = (req.query?.examType || 'All').trim();
+
+    // 1. Resolve student record strictly from authenticated user identity
+    const orConditions = [];
+
+    if (userEmail) {
+      orConditions.push({ email: userEmail });
+    }
+
+    if (userId) {
+      orConditions.push({ stuId: String(userId) });
+      orConditions.push({ studentId: String(userId) });
+      orConditions.push({ 'stuId._id': String(userId) });
+      if (mongoose.isValidObjectId(userId)) {
+        orConditions.push({ _id: userId });
+      }
+    }
+
+    if (routeIdentifier) {
+      orConditions.push({ studentId: routeIdentifier });
+      orConditions.push({ stuId: routeIdentifier });
+      orConditions.push({ email: routeIdentifier.toLowerCase() });
+      if (mongoose.isValidObjectId(routeIdentifier)) {
+        orConditions.push({ _id: routeIdentifier });
+      }
+    }
+
+    if (orConditions.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required. Unable to resolve student identity.'
+      });
+    }
+
+    const student = await Student.findOne({ $or: orConditions });
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student profile record not found for this account.'
+      });
+    }
+
+    // 2. Query all marks strictly for this student
+    const studentQueryConditions = [];
+    if (student.studentId) studentQueryConditions.push({ studentId: student.studentId });
+    if (student.stuId) studentQueryConditions.push({ studentId: student.stuId });
+    studentQueryConditions.push({ studentId: String(student._id) });
+    if (student.name && student.className && student.roll) {
+      studentQueryConditions.push({
+        studentName: new RegExp(`^${student.name.trim()}$`, 'i'),
+        className: new RegExp(`^${student.className.trim()}$`, 'i'),
+        roll: String(student.roll).trim()
+      });
+    }
+
+    const rawMarks = await Mark.find({ $or: studentQueryConditions }).sort({ createdAt: -1 });
+
+    // 3. Enrich with Exam details (examType, examDate, etc.)
+    const examNames = [...new Set(rawMarks.map((m) => m.exam))];
+    const examDocs = await Exam.find({ examName: { $in: examNames } });
+    const examMap = new Map();
+    examDocs.forEach((ex) => {
+      examMap.set(ex.examName.toLowerCase().trim(), ex);
+    });
+
+    const enrichedMarks = rawMarks.map((m) => {
+      const examDoc = examMap.get(m.exam.toLowerCase().trim());
+      const examType = examDoc?.examType || 'Mid Term';
+      const examDate = examDoc?.examDate || '';
+      const totalMarks = Number(m.totalMarks) || Number(examDoc?.totalMarks) || 100;
+      const marksObtained = Number(m.marksObtained) || 0;
+      const percentage = totalMarks > 0 ? Number(((marksObtained / totalMarks) * 100).toFixed(1)) : 0;
+      const { grade, gpa } = calculateGradeAndGpa(marksObtained, totalMarks);
+
+      return {
+        _id: m._id,
+        examId: examDoc?._id || null,
+        examName: m.exam,
+        examType,
+        examDate,
+        subject: m.subject,
+        className: m.className,
+        section: m.section,
+        totalMarks,
+        marksObtained,
+        percentage,
+        grade: m.grade || grade,
+        gpa: typeof m.gpa === 'number' ? m.gpa : gpa,
+        remarks: m.remarks || '',
+        createdAt: m.createdAt
+      };
+    });
+
+    // 4. Filter by examType if requested
+    let filteredMarks = enrichedMarks;
+    if (requestedExamType && requestedExamType !== 'All') {
+      const normRequested = requestedExamType.toLowerCase().replace(/[\s_-]/g, '');
+      filteredMarks = enrichedMarks.filter((m) => {
+        const normType = m.examType.toLowerCase().replace(/[\s_-]/g, '');
+        const normExam = m.examName.toLowerCase().replace(/[\s_-]/g, '');
+
+        if (normType === normRequested) return true;
+        if (normType.includes(normRequested) || normRequested.includes(normType)) return true;
+        if (normExam.includes(normRequested)) return true;
+
+        // Custom aliases for types
+        if (normRequested === 'finalexam' && (normType === 'final' || normExam.includes('final'))) return true;
+        if (normRequested === 'midtermexam' && (normType === 'midterm' || normExam.includes('midterm') || normExam.includes('mid'))) return true;
+        if (normRequested === 'classtest' && (normType === 'classtest' || normExam.includes('classtest') || normExam.includes('ct'))) return true;
+        if (normRequested === 'quiz' && (normType === 'quiz' || normExam.includes('quiz'))) return true;
+
+        return false;
+      });
+    }
+
+    // 5. Group by Exam for clean Exam-wise presentation
+    const groupedMap = new Map();
+    filteredMarks.forEach((mark) => {
+      const key = mark.examName;
+      if (!groupedMap.has(key)) {
+        groupedMap.set(key, {
+          examName: mark.examName,
+          examType: mark.examType,
+          examDate: mark.examDate,
+          examId: mark.examId,
+          totalMarks: 0,
+          obtainedMarks: 0,
+          totalSubjects: 0,
+          subjects: []
+        });
+      }
+
+      const group = groupedMap.get(key);
+      group.totalMarks += mark.totalMarks;
+      group.obtainedMarks += mark.marksObtained;
+      group.totalSubjects += 1;
+      group.subjects.push(mark);
+    });
+
+    const groupedByExam = Array.from(groupedMap.values()).map((group) => {
+      const pct = group.totalMarks > 0 ? Number(((group.obtainedMarks / group.totalMarks) * 100).toFixed(1)) : 0;
+      const gpaSum = group.subjects.reduce((sum, s) => sum + (Number(s.gpa) || 0), 0);
+      const avgGpa = group.totalSubjects > 0 ? Number((gpaSum / group.totalSubjects).toFixed(2)) : 0;
+      const hasFail = group.subjects.some((s) => s.grade === 'F' || s.gpa === 0);
+
+      const finalGpa = hasFail ? 0.0 : avgGpa;
+      let overallGrade = 'F';
+      if (!hasFail) {
+        if (finalGpa >= 5.0) overallGrade = 'A+';
+        else if (finalGpa >= 4.0) overallGrade = 'A';
+        else if (finalGpa >= 3.5) overallGrade = 'A-';
+        else if (finalGpa >= 3.0) overallGrade = 'B';
+        else if (finalGpa >= 2.0) overallGrade = 'C';
+        else if (finalGpa >= 1.0) overallGrade = 'D';
+      }
+
+      return {
+        ...group,
+        percentage: pct,
+        gpa: finalGpa,
+        grade: overallGrade,
+        isPassed: !hasFail
+      };
+    });
+
+    // 6. Calculate overall summary metrics
+    const totalSubjects = filteredMarks.length;
+    const totalMarks = filteredMarks.reduce((sum, m) => sum + m.totalMarks, 0);
+    const obtainedMarks = filteredMarks.reduce((sum, m) => sum + m.marksObtained, 0);
+    const overallPercentage = totalMarks > 0 ? Number(((obtainedMarks / totalMarks) * 100).toFixed(1)) : 0;
+    const gpaSum = filteredMarks.reduce((sum, m) => sum + (Number(m.gpa) || 0), 0);
+    const hasAnyFail = filteredMarks.some((m) => m.grade === 'F' || m.gpa === 0);
+    const rawGpa = totalSubjects > 0 ? Number((gpaSum / totalSubjects).toFixed(2)) : 0;
+    const overallGpa = hasAnyFail ? 0.0 : rawGpa;
+
+    let overallGrade = 'F';
+    if (!hasAnyFail && totalSubjects > 0) {
+      if (overallGpa >= 5.0) overallGrade = 'A+';
+      else if (overallGpa >= 4.0) overallGrade = 'A';
+      else if (overallGpa >= 3.5) overallGrade = 'A-';
+      else if (overallGpa >= 3.0) overallGrade = 'B';
+      else if (overallGpa >= 2.0) overallGrade = 'C';
+      else if (overallGpa >= 1.0) overallGrade = 'D';
+    }
+
+    res.status(200).json({
+      success: true,
+      student: {
+        _id: student._id,
+        studentId: student.studentId || student.stuId,
+        name: student.name,
+        roll: student.roll,
+        className: student.className,
+        section: student.section,
+        email: student.email,
+        profileImage: student.profileImage
+      },
+      summary: {
+        totalSubjects,
+        totalMarks,
+        obtainedMarks,
+        overallPercentage,
+        overallGpa,
+        overallGrade,
+        isPassed: !hasAnyFail && totalSubjects > 0
+      },
+      availableExamTypes: ['All', 'Final Exam', 'Midterm Exam', 'Class Test', 'Quiz'],
+      results: filteredMarks,
+      groupedByExam
+    });
+  } catch (error) {
+    console.error('Get student results error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch student results'
+    });
+  }
+};
+
