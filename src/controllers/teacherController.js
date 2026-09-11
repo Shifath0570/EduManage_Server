@@ -234,9 +234,9 @@ exports.generateTeacherExcel = async (req, res) => {
       },
     };
 
-    // 1. Request structured JSON records from Gemini 2.5 Flash
+    // 1. Request structured JSON records from Gemini AI
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash',
       contents: `Generate realistic mock teacher records for ${count} high school teachers specializing in ${subject}. Use realistic Bangladeshi names, unique valid emails, valid local phone numbers (+880...), real-looking addresses, YYYY-MM-DD date formats, and plausible qualifications (e.g., M.Sc in Physics, B.Ed). Ensure gender is strictly one of 'Male', 'Female', or 'Other'.`,
       config: {
         responseMimeType: 'application/json',

@@ -247,9 +247,9 @@ exports.generateStudentExcel = async (req, res) => {
       },
     };
 
-    // 1. Request dynamic structured JSON records from Gemini 2.5 Flash
+    // 1. Request dynamic structured JSON records from Gemini AI
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash',
       contents: `Generate realistic mock student records for ${count} students in ${className}. Use realistic Bangladeshi names, valid local phone numbers (+880...), real-looking addresses, valid dates, and sequential roll numbers starting from 1.`,
       config: {
         responseMimeType: 'application/json',
