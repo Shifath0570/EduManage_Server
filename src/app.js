@@ -38,6 +38,7 @@ const feeRoutes = require('./routes/feeRoutes');
 const salaryRoutes = require('./routes/salaryRoutes');
 const questionPaperRoutes = require('./routes/questionPaperRoutes');
 const blogRoutes = require('./routes/blogRoutes');
+const contactRoutes = require('./routes/contactRoutes');
 
 // Use routes
 app.use('/api/notices', noticeRoutes);
@@ -51,6 +52,7 @@ app.use('/api/fees', feeRoutes);
 app.use('/api/salaries', salaryRoutes);
 app.use('/api/question-papers', questionPaperRoutes);
 app.use('/api/blogs', blogRoutes);
+app.use('/api/contact', contactRoutes);
 
 // Welcome route
 app.get('/', (req, res) => {
