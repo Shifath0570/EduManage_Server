@@ -99,53 +99,35 @@ async function resolveUserAndAssignments(req) {
 }
 
 /**
- * Validates if teacher is authorized to enter/edit marks for a given class, section, stream, and subject
+ * Validates if teacher is the creator / owner of a specific exam
+ * Business Rule: Only the teacher who created the exam can enter or modify marks.
+ * Admin has full permission across all exams.
  */
-function isTeacherAuthorizedForMarks(teacherInfo, targetClassNum, targetSection, targetStream, targetSubject) {
-  if (!teacherInfo.isTeacher) return true; // Admin has full access
+function isTeacherExamOwner(userContext, examDoc) {
+  if (!userContext.isTeacher) return true; // Admin has full access
+  if (!examDoc) return false;
 
-  const { assignments, teacherDoc } = teacherInfo;
-  const cleanSub = String(targetSubject || '').toLowerCase().trim();
-  const cleanSec = String(targetSection || 'A').toUpperCase().replace('SECTION', '').trim();
-  const normGroup = normalizeGroup(targetStream);
+  const teacherEmail = (userContext.email || '').toLowerCase().trim();
+  const examCreatedByEmail = (examDoc.createdByEmail || '').toLowerCase().trim();
 
-  if (assignments && assignments.length > 0) {
-    const isAssigned = assignments.some((a) => {
-      // 1. Class match
-      const aClassNum = normalizeClassNumber(a.classId);
-      if (aClassNum !== targetClassNum) return false;
-
-      // 2. Section match (if section is assigned)
-      if (a.sectionId && a.sectionId !== 'All') {
-        const aSec = String(a.sectionId).toUpperCase().replace('SECTION', '').trim();
-        if (aSec !== cleanSec) return false;
-      }
-
-      // 3. Group match for Class 9/10
-      if (targetClassNum >= 9) {
-        const aGroup = normalizeGroup(a.groupId);
-        if (aGroup && aGroup !== 'general' && aGroup !== normGroup) {
-          return false;
-        }
-      }
-
-      // 4. Subject match
-      const aSub = String(a.subjectId || '').toLowerCase().trim();
-      if (aSub && aSub !== 'all subjects' && aSub !== cleanSub) {
-        const normASub = aSub.replace(/[\s_-]+/g, '');
-        const normTSub = cleanSub.replace(/[\s_-]+/g, '');
-        if (normASub !== normTSub) return false;
-      }
-
-      return true;
-    });
-
-    if (isAssigned) return true;
+  // 1. Email match (most reliable across sessions)
+  if (teacherEmail && examCreatedByEmail && teacherEmail === examCreatedByEmail) {
+    return true;
   }
 
-  if (teacherDoc && teacherDoc.subjectSpecialization) {
-    const spec = String(teacherDoc.subjectSpecialization).toLowerCase().trim();
-    if (spec.includes(cleanSub) || cleanSub.includes(spec)) {
+  // 2. User ID / Teacher ID match
+  const teacherId = userContext.userId ? String(userContext.userId).trim() : '';
+  const examCreatedBy = examDoc.createdBy ? String(examDoc.createdBy).trim() : '';
+
+  if (teacherId && examCreatedBy && teacherId === examCreatedBy) {
+    return true;
+  }
+
+  // 3. Match against teacherDoc._id or teacherDoc.teacherId
+  if (userContext.teacherDoc) {
+    const docId = String(userContext.teacherDoc._id || '').trim();
+    const docTeacherId = String(userContext.teacherDoc.teacherId || '').trim();
+    if (examCreatedBy && (examCreatedBy === docId || examCreatedBy === docTeacherId)) {
       return true;
     }
   }
@@ -209,20 +191,14 @@ exports.saveMarks = async (req, res) => {
       });
     }
 
-    // 3. Strict Teacher Authorization check
+    // 3. Strict Teacher Ownership check (Exam Creator Owns Mark Entry)
     if (userContext.isTeacher) {
-      const isAuthorized = isTeacherAuthorizedForMarks(
-        userContext,
-        examClassNum,
-        examDoc.section,
-        examDoc.stream,
-        subject
-      );
-
-      if (!isAuthorized) {
+      const isOwner = isTeacherExamOwner(userContext, examDoc);
+      if (!isOwner) {
+        const creatorName = examDoc.createdByName || examDoc.createdByEmail || 'the teacher who created it';
         return res.status(403).json({
           success: false,
-          message: `Forbidden: You are not authorized to enter or modify marks for ${examDoc.className}${examDoc.stream ? ` (${examDoc.stream})` : ''} Section ${examDoc.section} (${subject}). Teachers may only enter marks for their assigned class, section, and subject.`
+          message: `Forbidden: Only the teacher who created this exam (${creatorName}) can enter and modify its marks.`
         });
       }
     }
