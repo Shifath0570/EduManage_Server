@@ -234,11 +234,13 @@ exports.getAllBlogs = async (req, res) => {
         }
 
         if (category && category !== 'All') {
-            filter.category = { $regex: new RegExp(`^${category.trim()}$`, 'i') };
+            const escapedCategory = category.trim().replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+            filter.category = { $regex: new RegExp(`^${escapedCategory}$`, 'i') };
         }
 
         if (tag && tag !== 'All') {
-            filter.tags = { $regex: new RegExp(`^${tag.trim()}$`, 'i') };
+            const escapedTag = tag.trim().replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+            filter.tags = { $regex: new RegExp(`^${escapedTag}$`, 'i') };
         }
 
         if (featured !== undefined) {
@@ -247,12 +249,14 @@ exports.getAllBlogs = async (req, res) => {
 
         if (search && search.trim()) {
             const term = search.trim();
+            const safeTerm = term.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+            const words = term.split(/\s+/).filter(Boolean).map(w => w.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&"));
+            const searchTerms = Array.from(new Set([safeTerm, ...words]));
+            const regexList = searchTerms.map(t => new RegExp(t, 'i'));
+
             filter.$or = [
-                { title: { $regex: term, $options: 'i' } },
-                { description: { $regex: term, $options: 'i' } },
-                { content: { $regex: term, $options: 'i' } },
-                { author: { $regex: term, $options: 'i' } },
-                { category: { $regex: term, $options: 'i' } }
+                { title: { $in: regexList } },
+                { tags: { $in: regexList } }
             ];
         }
 
