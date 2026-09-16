@@ -2,6 +2,12 @@ const mongoose = require("mongoose");
 
 const feeCollectionSchema = new mongoose.Schema(
   {
+    studentDBId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Student",
+      required: true,
+      index: true,
+    },
     studentId: {
       type: String,
       required: true,
@@ -35,5 +41,6 @@ const feeCollectionSchema = new mongoose.Schema(
 
 // Compound index for combined query optimization
 feeCollectionSchema.index({ studentId: 1, paymentDate: -1 });
+feeCollectionSchema.index({ studentDBId: 1, paymentDate: -1 });
 
 module.exports = mongoose.model("FeeCollection", feeCollectionSchema);
