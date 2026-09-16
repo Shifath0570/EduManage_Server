@@ -10,6 +10,7 @@ const {
   normalizeGroup,
   isValidSubject
 } = require('../config/classSubjects');
+const { generateOrUpdateStudentInsight } = require('../services/studentInsightService');
 
 // Helper to normalize Class strings (e.g. "Class 5", "class-5", "5" -> "5")
 const normalizeClass = (cls) => String(cls || '').replace(/class[_\-\s]*/i, '').trim().toLowerCase();
@@ -297,6 +298,14 @@ exports.saveMarks = async (req, res) => {
 
       savedMarks.push(record);
     }
+
+    // Trigger background AI performance insight generation/update for all affected students
+    const uniqueStudentIds = [...new Set(savedMarks.map((m) => m.studentId))];
+    uniqueStudentIds.forEach((sId) => {
+      generateOrUpdateStudentInsight(sId, { force: true }).catch((err) => {
+        console.warn(`[AI Student Insight] Background refresh for student ${sId} notice:`, err.message);
+      });
+    });
 
     res.status(200).json({
       success: true,
@@ -636,4 +645,191 @@ exports.getStudentResults = async (req, res) => {
     });
   }
 };
+
+/**
+ * Get AI-powered Student Performance Insight
+ * GET /api/marks/performance-insight
+ * GET /api/marks/performance-insight/:identifier
+ */
+exports.getStudentPerformanceInsight = async (req, res) => {
+  try {
+    const userEmail = (
+      req.user?.email ||
+      req.headers['x-user-email'] ||
+      req.query?.email ||
+      req.query?.userEmail ||
+      ''
+    ).toLowerCase().trim();
+
+    const userId =
+      req.user?.id ||
+      req.user?._id ||
+      req.headers['x-user-id'] ||
+      req.query?.userId ||
+      req.query?.stuId ||
+      null;
+
+    const routeIdentifier = req.params?.identifier ? req.params.identifier.trim() : '';
+
+    const orConditions = [];
+
+    if (userEmail) {
+      orConditions.push({ email: userEmail });
+    }
+
+    if (userId) {
+      orConditions.push({ stuId: String(userId) });
+      orConditions.push({ studentId: String(userId) });
+      orConditions.push({ 'stuId._id': String(userId) });
+      if (mongoose.isValidObjectId(userId)) {
+        orConditions.push({ _id: userId });
+      }
+    }
+
+    if (routeIdentifier) {
+      orConditions.push({ studentId: routeIdentifier });
+      orConditions.push({ stuId: routeIdentifier });
+      orConditions.push({ email: routeIdentifier.toLowerCase() });
+      if (mongoose.isValidObjectId(routeIdentifier)) {
+        orConditions.push({ _id: routeIdentifier });
+      }
+    }
+
+    if (orConditions.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required. Unable to resolve student identity.'
+      });
+    }
+
+    const student = await Student.findOne({ $or: orConditions });
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student profile record not found for this account.'
+      });
+    }
+
+    const result = await generateOrUpdateStudentInsight(student, { force: false });
+
+    res.status(200).json({
+      success: true,
+      hasData: result.hasData,
+      cached: result.cached || false,
+      data: result.data || null,
+      student: result.student || {
+        _id: student._id,
+        studentId: student.studentId || student.stuId,
+        name: student.name,
+        roll: student.roll,
+        className: student.className,
+        section: student.section,
+        email: student.email,
+        profileImage: student.profileImage
+      },
+      message: result.message || 'AI Performance Insight retrieved successfully.'
+    });
+  } catch (error) {
+    console.error('Get performance insight error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to retrieve student performance insight.'
+    });
+  }
+};
+
+/**
+ * Force regenerate AI-powered Student Performance Insight
+ * POST /api/marks/performance-insight/regenerate
+ */
+exports.regenerateStudentPerformanceInsight = async (req, res) => {
+  try {
+    const userEmail = (
+      req.user?.email ||
+      req.headers['x-user-email'] ||
+      req.body?.email ||
+      req.query?.email ||
+      ''
+    ).toLowerCase().trim();
+
+    const userId =
+      req.user?.id ||
+      req.user?._id ||
+      req.headers['x-user-id'] ||
+      req.body?.userId ||
+      req.body?.stuId ||
+      req.query?.userId ||
+      null;
+
+    const routeIdentifier = req.params?.identifier ? req.params.identifier.trim() : (req.body?.studentId || '');
+
+    const orConditions = [];
+
+    if (userEmail) {
+      orConditions.push({ email: userEmail });
+    }
+
+    if (userId) {
+      orConditions.push({ stuId: String(userId) });
+      orConditions.push({ studentId: String(userId) });
+      orConditions.push({ 'stuId._id': String(userId) });
+      if (mongoose.isValidObjectId(userId)) {
+        orConditions.push({ _id: userId });
+      }
+    }
+
+    if (routeIdentifier) {
+      orConditions.push({ studentId: routeIdentifier });
+      orConditions.push({ stuId: routeIdentifier });
+      orConditions.push({ email: routeIdentifier.toLowerCase() });
+      if (mongoose.isValidObjectId(routeIdentifier)) {
+        orConditions.push({ _id: routeIdentifier });
+      }
+    }
+
+    if (orConditions.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required. Unable to resolve student identity.'
+      });
+    }
+
+    const student = await Student.findOne({ $or: orConditions });
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student profile record not found for this account.'
+      });
+    }
+
+    const result = await generateOrUpdateStudentInsight(student, { force: true });
+
+    res.status(200).json({
+      success: true,
+      hasData: result.hasData,
+      cached: false,
+      data: result.data || null,
+      student: result.student || {
+        _id: student._id,
+        studentId: student.studentId || student.stuId,
+        name: student.name,
+        roll: student.roll,
+        className: student.className,
+        section: student.section,
+        email: student.email,
+        profileImage: student.profileImage
+      },
+      message: 'AI Performance Insight regenerated successfully.'
+    });
+  } catch (error) {
+    console.error('Regenerate performance insight error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to regenerate student performance insight.'
+    });
+  }
+};
+
 
