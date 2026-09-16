@@ -39,6 +39,8 @@ const salaryRoutes = require('./routes/salaryRoutes');
 const questionPaperRoutes = require('./routes/questionPaperRoutes');
 const blogRoutes = require('./routes/blogRoutes');
 const contactRoutes = require('./routes/contactRoutes');
+const teacherLeaveRoutes = require('./routes/teacherLeaveRequestRoutes');
+const studentLeaveRequestRoutes = require('./routes/studentLeaveRequestRoutes');
 
 // Use routes
 app.use('/api/notices', noticeRoutes);
@@ -53,6 +55,8 @@ app.use('/api/salaries', salaryRoutes);
 app.use('/api/question-papers', questionPaperRoutes);
 app.use('/api/blogs', blogRoutes);
 app.use('/api/contact', contactRoutes);
+app.use('/api/teacher-leave-requests', teacherLeaveRoutes);
+app.use('/api/student-leave-requests', studentLeaveRequestRoutes);
 
 // Welcome route
 app.get('/', (req, res) => {
