@@ -1,5 +1,5 @@
 const SalaryPayment = require("../models/SalaryPayment");
-const Teacher = require("../models/Teacher"); // Adjust path if needed
+const Teacher = require("../models/Teacher");
 
 /**
  * @desc Get payroll data for active teachers with search, filter, and pagination
@@ -12,9 +12,15 @@ exports.getTeacherSalaries = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const { search, month, paymentStatus } = req.query;
-    const targetMonth = month || new Date().toISOString().slice(0, 7); // Default to current month "YYYY-MM"
+    const targetMonth = month || new Date().toISOString().slice(0, 7);
 
-    // Filter active teachers
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(targetMonth)) {
+      return res.status(400).json({
+        success: false,
+        message: "month must use YYYY-MM format, for example 2026-09",
+      });
+    }
+
     let teacherFilter = { status: "Active" };
 
     if (search) {
@@ -33,7 +39,6 @@ exports.getTeacherSalaries = async (req, res) => {
 
     const teacherIds = teachers.map((t) => t._id);
 
-    // Fetch payments made to these teachers for target month
     const payments = await SalaryPayment.find({
       teacherId: { $in: teacherIds },
       month: targetMonth,
@@ -43,7 +48,6 @@ exports.getTeacherSalaries = async (req, res) => {
       payments.map((p) => [p.teacherId.toString(), p])
     );
 
-    // Map payroll records
     let payrollRecords = teachers.map((teacher) => {
       const payment = paymentMap.get(teacher._id.toString());
       const baseSalary = 15000;
@@ -54,7 +58,7 @@ exports.getTeacherSalaries = async (req, res) => {
 
       return {
         _id: teacher._id,
-        teacherId: teacher.teacherId,
+        teacherId: teacher.teacherId || teacher._id,
         employeeId: teacher.employeeId,
         fullName: teacher.fullName,
         email: teacher.email,
@@ -69,26 +73,40 @@ exports.getTeacherSalaries = async (req, res) => {
       };
     });
 
-    // Post-filter by status if requested
     if (paymentStatus) {
       payrollRecords = payrollRecords.filter(
         (r) => r.paymentStatus === paymentStatus
       );
     }
 
-    // Aggregated metrics calculation
     const totalActiveCount = await Teacher.countDocuments({ status: "Active" });
-    const monthPayments = await SalaryPayment.find({ month: targetMonth });
-    const totalPaidSalary = monthPayments.reduce(
-      (acc, curr) => acc + curr.paidAmount,
-      0
-    );
+    const activeTeacherIds = await Teacher.distinct("_id", {
+      status: "Active",
+    });
+
+    const currentMonthPayments = await SalaryPayment.aggregate([
+      {
+        $match: {
+          month: targetMonth,
+          teacherId: { $in: activeTeacherIds },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalPaidSalary: { $sum: "$paidAmount" },
+        },
+      },
+    ]);
+
+    const totalPaidSalary = currentMonthPayments[0]?.totalPaidSalary || 0;
     const totalExpectedSalary = totalActiveCount * 15000;
     const totalDueSalary = totalExpectedSalary - totalPaidSalary;
 
     res.status(200).json({
       success: true,
       summary: {
+        month: targetMonth,
         totalExpectedSalary,
         totalPaidSalary,
         totalDueSalary,
@@ -102,6 +120,54 @@ exports.getTeacherSalaries = async (req, res) => {
       data: payrollRecords,
     });
   } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * @desc Get salary payments for one teacher by teacherId or _id
+ * @route GET /api/salaries/:id
+ */
+exports.getTeacherSalariesById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { month } = req.query;
+
+    // Find teacher by teacherId field or MongoDB _id
+    const teacher = await Teacher.findOne({
+      $or: [{ teacherId: id }, { _id: id }],
+    }).lean();
+
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: "Teacher record not found",
+      });
+    }
+
+    const paymentFilter = { teacherId: teacher._id };
+    if (month) paymentFilter.month = month;
+
+    const payments = await SalaryPayment.find(paymentFilter)
+      .sort({ month: -1, paymentDate: -1 })
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        _id: teacher._id,
+        teacherId: teacher.teacherId || teacher._id,
+        salaries: payments,
+      },
+    });
+  } catch (error) {
+    if (error.name === "CastError") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid ID format provided",
+      });
+    }
+
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -122,7 +188,11 @@ exports.payTeacherSalary = async (req, res) => {
       });
     }
 
-    const teacher = await Teacher.findById(teacherId);
+    // Lookup teacher by teacherId field or _id
+    const teacher = await Teacher.findOne({
+      $or: [{ teacherId }, { _id: teacherId }],
+    });
+
     if (!teacher) {
       return res
         .status(404)
@@ -130,7 +200,7 @@ exports.payTeacherSalary = async (req, res) => {
     }
 
     let paymentRecord = await SalaryPayment.findOne({
-      teacherId,
+      teacherId: teacher._id,
       month: targetMonth,
     });
 
