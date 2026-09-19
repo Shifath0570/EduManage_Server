@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { verifyToken, authorize } = require('../middleware/auth');
 
 const {
   getLeaveRequests,
@@ -10,10 +11,10 @@ const {
 } = require('../controllers/studentLeaveRequestController');
 
 // Routes mapping
-router.get('/', getLeaveRequests);
-router.get('/:id', getLeaveRequestById);
-router.post('/', createLeaveRequest);
-router.put('/:id', updateLeaveRequest);
-router.delete('/:id', deleteLeaveRequest);
+router.get('/', verifyToken, authorize('admin','student'), getLeaveRequests);
+router.get('/:id', verifyToken, authorize('admin','student'), getLeaveRequestById);
+router.post('/', verifyToken, authorize('admin','student'), createLeaveRequest);
+router.put('/:id', verifyToken, authorize('admin','student'), updateLeaveRequest);
+router.delete('/:id', verifyToken, authorize('admin','student'), deleteLeaveRequest);
 
 module.exports = router;
