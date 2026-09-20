@@ -100,17 +100,42 @@ exports.getStudentById = async (req, res) => {
 
 
 
-// Get student by User ID, Mongo _id, or Student Roll/ID
+// Get student by User ID, Mongo _id, or Student Roll/ID / email / name
 exports.getStudentByStudentId = async (req, res) => {
   try {
     const { stuId } = req.params;
+    const userEmail = req.user?.email;
+    const userName = req.user?.name;
 
-    // Searches for matching string ID or populated object ID
+    const query = [
+      { stuId: String(stuId) },
+      { studentId: String(stuId) },
+      { roll: String(stuId) },
+      { user: String(stuId) },
+      { userId: String(stuId) }
+    ];
+
+    if (userEmail) {
+      query.push({ email: userEmail.toLowerCase().trim() });
+      query.push({ email: new RegExp(`^${userEmail.trim()}$`, 'i') });
+    }
+
+    if (stuId && stuId.includes('@')) {
+      query.push({ email: stuId.toLowerCase().trim() });
+      query.push({ email: new RegExp(`^${stuId.trim()}$`, 'i') });
+    }
+
+    if (userName) {
+      query.push({ name: new RegExp(`^${userName.trim()}$`, 'i') });
+    }
+
+    const mongoose = require('mongoose');
+    if (mongoose.Types.ObjectId.isValid(stuId)) {
+      query.push({ _id: new mongoose.Types.ObjectId(stuId) });
+    }
+
     const student = await Student.findOne({
-      $or: [
-        { stuId: stuId },
-        { 'stuId._id': stuId }
-      ]
+      $or: query
     });
 
     if (!student) {
