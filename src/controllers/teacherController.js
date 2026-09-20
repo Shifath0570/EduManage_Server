@@ -43,17 +43,42 @@ exports.getTeacherById = async (req, res) => {
 };
 
 
-// Get teacher by custom teacherId (or User ID reference)
+// Get teacher by custom teacherId (or User ID reference / email / name)
 exports.getTeacherByTeacherId = async (req, res) => {
   try {
     const { teacherId } = req.params;
+    const userEmail = req.user?.email;
+    const userName = req.user?.name;
 
-    // Searches for matching string ID or populated object ID
+    const query = [
+      { teacherId: String(teacherId) },
+      { employeeId: String(teacherId) },
+      { user: String(teacherId) },
+      { userId: String(teacherId) }
+    ];
+
+    if (userEmail) {
+      query.push({ email: userEmail.toLowerCase().trim() });
+      query.push({ email: new RegExp(`^${userEmail.trim()}$`, 'i') });
+    }
+
+    if (teacherId && teacherId.includes('@')) {
+      query.push({ email: teacherId.toLowerCase().trim() });
+      query.push({ email: new RegExp(`^${teacherId.trim()}$`, 'i') });
+    }
+
+    if (userName) {
+      query.push({ name: new RegExp(`^${userName.trim()}$`, 'i') });
+    }
+
+    const mongoose = require('mongoose');
+    if (mongoose.Types.ObjectId.isValid(teacherId)) {
+      query.push({ _id: new mongoose.Types.ObjectId(teacherId) });
+    }
+
+    // Searches for matching string ID or email or MongoDB ID or name
     const teacher = await Teacher.findOne({
-      $or: [
-        { teacherId: teacherId },
-        { 'teacherId._id': teacherId }
-      ]
+      $or: query
     });
 
     if (!teacher) {
