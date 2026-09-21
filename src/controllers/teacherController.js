@@ -37,6 +37,7 @@ exports.getTeacherById = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
+      message: 'Server error retrieving teacher profile',
       error: error.message
     });
   }

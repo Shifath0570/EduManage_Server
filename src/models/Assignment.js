@@ -3,9 +3,9 @@ const mongoose = require('mongoose');
 const assignmentSchema = new mongoose.Schema(
   {
     teacherId: {
-      type: String,
-      required: [true, 'Teacher ID is required'],
-      trim: true
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'Teacher',                       
+      required: [true, 'Teacher ID is required']
     },
     classId: {
       type: String,
@@ -76,3 +76,6 @@ const assignmentSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.models.Assignment || mongoose.model('Assignment', assignmentSchema);
+
+
+

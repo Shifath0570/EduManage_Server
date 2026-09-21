@@ -119,7 +119,7 @@ exports.updateAssignment = async (req, res) => {
     const updatedAssignment = await Assignment.findByIdAndUpdate(
       req.params.id,
       req.body,
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true } // ✅ Modern syntax
     );
 
     if (!updatedAssignment) {
@@ -142,6 +142,10 @@ exports.updateAssignment = async (req, res) => {
     });
   }
 };
+
+
+
+
 
 // Delete assignment by ID
 exports.deleteAssignment = async (req, res) => {
@@ -166,3 +170,7 @@ exports.deleteAssignment = async (req, res) => {
     });
   }
 };
+
+
+
+

@@ -3,11 +3,12 @@ const express = require('express');
 const router = express.Router();
 
 const { verifyToken, authorize } = require('../middleware/auth');
-const { getStudents, getStudentById, createStudent, updateStudent, deleteStudent} = require('../controllers/studentController');
+const { getStudents, getStudentById, getStudentByStudentId, createStudent, updateStudent, deleteStudent} = require('../controllers/studentController');
 
 // Public routes
 router.get('/', verifyToken, authorize('admin'), getStudents);
 router.get('/:id', verifyToken, authorize('admin', 'teacher', 'student'), getStudentById);
+router.get('/by-user/:stuId', verifyToken, authorize('admin', 'teacher', 'student'), getStudentByStudentId);
 
 // Protected routes (require authentication)
 router.post('/', verifyToken, authorize('admin', 'student'), createStudent);

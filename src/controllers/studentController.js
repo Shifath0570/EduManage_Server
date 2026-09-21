@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Student = require('../models/Student');
 const { GoogleGenAI, Type } = require('@google/genai');
 const ExcelJS = require('exceljs');
@@ -100,23 +101,25 @@ exports.getStudentById = async (req, res) => {
 
 
 
-// Get student by User ID, Mongo _id, or Student Roll/ID
+// Get student by User ID / stuId
 exports.getStudentByStudentId = async (req, res) => {
   try {
     const { stuId } = req.params;
 
-    // Searches for matching string ID or populated object ID
-    const student = await Student.findOne({
-      $or: [
-        { stuId: stuId },
-        { 'stuId._id': stuId }
-      ]
-    });
+    // Build conditions to support both string and ObjectId lookups
+    const conditions = [{ stuId: stuId }, { studentId: stuId }];
+    
+    if (mongoose.Types.ObjectId.isValid(stuId)) {
+      conditions.push({ stuId: new mongoose.Types.ObjectId(stuId) });
+      conditions.push({ _id: new mongoose.Types.ObjectId(stuId) });
+    }
+
+    const student = await Student.findOne({ $or: conditions });
 
     if (!student) {
       return res.status(404).json({
         success: false,
-        message: 'Student record not found for the provided stuId'
+        message: 'Student record not found for the provided ID'
       });
     }
 
@@ -132,7 +135,6 @@ exports.getStudentByStudentId = async (req, res) => {
     });
   }
 };
-
 
 // Create a new student
 exports.createStudent = async (req, res) => {
