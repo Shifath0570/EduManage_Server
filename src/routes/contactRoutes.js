@@ -9,6 +9,8 @@ router.post('/', contactController.submitContactMessage);
 // Admin-only routes
 router.get('/', verifyToken, authorize('admin'), contactController.getAllContactMessages);
 router.patch('/:id', verifyToken, authorize('admin'), contactController.updateMessageStatus);
+router.put('/:id', verifyToken, authorize('admin'), contactController.updateMessageStatus);
 router.delete('/:id', verifyToken, authorize('admin'), contactController.deleteContactMessage);
 
 module.exports = router;
+

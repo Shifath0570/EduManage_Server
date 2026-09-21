@@ -798,3 +798,59 @@ exports.getAttendanceNotices = async (req, res) => {
         });
     }
 };
+
+/**
+ * Update attendance session by ID
+ * PUT /api/attendance/:id
+ */
+exports.updateAttendance = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updateData = req.body;
+
+        if (updateData.records && Array.isArray(updateData.records)) {
+            updateData.totalStudents = updateData.records.length;
+            updateData.presentCount = updateData.records.filter(r => r.status === 'PRESENT').length;
+            updateData.absentCount = updateData.records.filter(r => r.status === 'ABSENT').length;
+            updateData.lateCount = updateData.records.filter(r => r.status === 'LATE').length;
+            updateData.excusedCount = updateData.records.filter(r => r.status === 'EXCUSED').length;
+        }
+
+        const updated = await Attendance.findByIdAndUpdate(id, updateData, { new: true, runValidators: true });
+        if (!updated) {
+            return res.status(404).json({ success: false, message: 'Attendance session not found' });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Attendance updated successfully',
+            data: updated
+        });
+    } catch (error) {
+        console.error('Update attendance error:', error);
+        res.status(500).json({ success: false, message: error.message || 'Failed to update attendance' });
+    }
+};
+
+/**
+ * Delete attendance session by ID
+ * DELETE /api/attendance/:id
+ */
+exports.deleteAttendance = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const deleted = await Attendance.findByIdAndDelete(id);
+        if (!deleted) {
+            return res.status(404).json({ success: false, message: 'Attendance session not found' });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Attendance record deleted successfully'
+        });
+    } catch (error) {
+        console.error('Delete attendance error:', error);
+        res.status(500).json({ success: false, message: error.message || 'Failed to delete attendance' });
+    }
+};
+

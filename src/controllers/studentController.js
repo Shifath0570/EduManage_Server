@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const Student = require('../models/Student');
 const { GoogleGenAI, Type } = require('@google/genai');
 const ExcelJS = require('exceljs');
@@ -101,25 +100,48 @@ exports.getStudentById = async (req, res) => {
 
 
 
-// Get student by User ID / stuId
+// Get student by User ID, Mongo _id, or Student Roll/ID / email / name
 exports.getStudentByStudentId = async (req, res) => {
   try {
     const { stuId } = req.params;
+    const userEmail = req.user?.email;
+    const userName = req.user?.name;
 
-    // Build conditions to support both string and ObjectId lookups
-    const conditions = [{ stuId: stuId }, { studentId: stuId }];
-    
-    if (mongoose.Types.ObjectId.isValid(stuId)) {
-      conditions.push({ stuId: new mongoose.Types.ObjectId(stuId) });
-      conditions.push({ _id: new mongoose.Types.ObjectId(stuId) });
+    const query = [
+      { stuId: String(stuId) },
+      { studentId: String(stuId) },
+      { roll: String(stuId) },
+      { user: String(stuId) },
+      { userId: String(stuId) }
+    ];
+
+    if (userEmail) {
+      query.push({ email: userEmail.toLowerCase().trim() });
+      query.push({ email: new RegExp(`^${userEmail.trim()}$`, 'i') });
     }
 
-    const student = await Student.findOne({ $or: conditions });
+    if (stuId && stuId.includes('@')) {
+      query.push({ email: stuId.toLowerCase().trim() });
+      query.push({ email: new RegExp(`^${stuId.trim()}$`, 'i') });
+    }
+
+    if (userName) {
+      query.push({ name: new RegExp(`^${userName.trim()}$`, 'i') });
+    }
+
+    const mongoose = require('mongoose');
+    if (mongoose.Types.ObjectId.isValid(stuId)) {
+      query.push({ _id: new mongoose.Types.ObjectId(stuId) });
+    }
+
+    const student = await Student.findOne({
+      $or: query
+    });
 
     if (!student) {
       return res.status(404).json({
         success: false,
-        message: 'Student record not found for the provided ID'
+        message: 'Student record not found for the provided stuId'
       });
     }
 
@@ -135,6 +157,7 @@ exports.getStudentByStudentId = async (req, res) => {
     });
   }
 };
+
 
 // Create a new student
 exports.createStudent = async (req, res) => {
@@ -316,7 +339,6 @@ exports.generateStudentExcel = async (req, res) => {
     });
   }
 };
-
 
 
 

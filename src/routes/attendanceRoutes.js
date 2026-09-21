@@ -24,4 +24,11 @@ router.get('/notices', verifyToken, authorize('admin', 'teacher', 'student'), at
 // Get individual student attendance report (Student)
 router.get('/student/:identifier', verifyToken, authorize('admin', 'teacher', 'student'), attendanceController.getStudentAttendance);
 
+// Update attendance session (Admin & Teacher)
+router.put('/:id', verifyToken, authorize('admin', 'teacher'), attendanceController.updateAttendance);
+
+// Delete attendance session (Admin)
+router.delete('/:id', verifyToken, authorize('admin'), attendanceController.deleteAttendance);
+
 module.exports = router;
+
