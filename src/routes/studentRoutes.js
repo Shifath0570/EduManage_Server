@@ -6,7 +6,7 @@ const { verifyToken, authorize } = require('../middleware/auth');
 const { getStudents, getStudentById, getStudentByStudentId, createStudent, updateStudent, deleteStudent } = require('../controllers/studentController');
 
 // Public routes
-router.get('/', verifyToken, authorize('admin'), getStudents);
+router.get('/', verifyToken, authorize('admin', 'teacher'), getStudents);
 router.get('/by-user/:stuId', verifyToken, authorize('admin', 'teacher', 'student'), getStudentByStudentId);
 router.get('/:id', verifyToken, authorize('admin', 'teacher', 'student'), getStudentById);
 
