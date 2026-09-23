@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { verifyToken, authorize } = require('../middleware/auth');
+const { verifyToken, optionalVerifyToken, authorize } = require('../middleware/auth');
 const {
   saveMarks,
   getMarks,
@@ -19,8 +19,8 @@ router.get('/my-results', verifyToken, authorize('admin', 'teacher', 'student'),
 router.get('/student', verifyToken, authorize('admin', 'teacher', 'student'), getStudentResults);
 router.get('/student/:identifier', verifyToken, authorize('admin', 'teacher', 'student'), getStudentResults);
 
-// Marks CRUD routes
-router.post('/', verifyToken, authorize('admin', 'teacher'), saveMarks);
-router.get('/', verifyToken, authorize('admin', 'teacher', 'student'), getMarks);
+// Marks CRUD routes (authorization & exam ownership enforced inside saveMarks controller)
+router.post('/', optionalVerifyToken, saveMarks);
+router.get('/', optionalVerifyToken, getMarks);
 
 module.exports = router;

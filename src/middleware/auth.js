@@ -67,6 +67,36 @@ const verifyToken = async (req, res, next) => {
 };
 
 /**
+ * Optional token verification: If token is present and valid, attaches req.user.
+ * If token is not present or invalid, proceeds without failing.
+ */
+const optionalVerifyToken = async (req, res, next) => {
+    const authHeader = req?.headers?.authorization;
+    if (!authHeader) {
+        return next();
+    }
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+        return next();
+    }
+
+    try {
+        const { payload } = await jwtVerify(token, JWKS);
+        req.user = {
+            id: payload.sub || payload.id,
+            email: payload.email,
+            name: payload.name,
+            role: (payload.role || 'student').toLowerCase().trim(),
+            ...payload
+        };
+        next();
+    } catch (error) {
+        // Continue gracefully even if token expired/invalid
+        next();
+    }
+};
+
+/**
  * Restricts access to specified roles. 
  * Supports both single role string ('teacher') or array of roles (['teacher', 'student'])
  */
@@ -92,5 +122,5 @@ const authorize = (...allowedRoles) => {
     };
 };
 
-module.exports = { verifyToken, authorize };
+module.exports = { verifyToken, optionalVerifyToken, authorize };
 

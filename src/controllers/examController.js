@@ -228,7 +228,9 @@ exports.createExam = async (req, res) => {
       }
     }
 
-    const cleanSection = section ? section.toUpperCase().replace('SECTION', '').trim() : 'A';
+    const cleanSection = section
+      ? String(section).toUpperCase().replace(/^SECTION[\s_-]*/i, '').replace(/^SEC[\s_-]*/i, '').trim() || 'A'
+      : 'A';
 
     // Format questionConfiguration if provided
     let formattedQuestionConfig = null;
@@ -422,7 +424,7 @@ exports.updateExam = async (req, res) => {
     }
 
     if (updates.section) {
-      updates.section = updates.section.toUpperCase().replace('SECTION', '').trim();
+      updates.section = String(updates.section).toUpperCase().replace(/^SECTION[\s_-]*/i, '').replace(/^SEC[\s_-]*/i, '').trim() || 'A';
     }
 
     if (updates.questionConfiguration) {
