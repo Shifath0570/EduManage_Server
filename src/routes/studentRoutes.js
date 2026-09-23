@@ -6,9 +6,9 @@ const { verifyToken, authorize } = require('../middleware/auth');
 const { getStudents, getStudentById, getStudentByStudentId, createStudent, updateStudent, deleteStudent } = require('../controllers/studentController');
 
 // Public routes
-router.get('/', verifyToken, authorize('admin'), getStudents);
-router.get('/by-user/:stuId', verifyToken, authorize('admin', 'teacher', 'student'), getStudentByStudentId);
-router.get('/:id', verifyToken, authorize('admin', 'teacher', 'student'), getStudentById);
+router.get('/', getStudents);
+router.get('/by-user/:stuId', getStudentByStudentId);
+router.get('/:id', getStudentById);
 
 // Protected routes (require authentication)
 router.post('/', verifyToken, authorize('admin', 'student'), createStudent);
